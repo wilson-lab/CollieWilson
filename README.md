@@ -10,7 +10,7 @@ This repository accompanies the manuscript:
 
 ## Overview
 
-This project explores the circuit-level mechanisms underlying adaptive visual object pursuit in Drosophila melanogaster. The study demonstrates that pursuit behavior relies on two functionally distinct and anatomically segregated feedback pathways through the anterior optic tubercle (AOTU): AOTU025 provides coarse, fixed-gain steering for objects located in the lateral visual field, while AOTU019 provides precise, flexible-gain steering for objects near the midline. By combining connectomic analysis, whole-cell electrophysiology, optogenetic activation, and closed-loop behavioral assays, the authors show that AOTU019 exhibits direction-selectivity, is modulated by arousal and forward locomotion, and is sufficient to drive turning and forward acceleration. Modeling work further reveals how direction-selective inhibition from AOTU019 and excitation from AOTU025 jointly generate smooth, adaptive steering behavior. The repository contains all code for reconstructing these analyses and simulations, including connectomic data parsing, neural data acquisition, biophysical modeling, and statistical analysis of pursuit behavior across conditions.
+This project investigates the neural basis of adaptive visual pursuit in *Drosophila melanogaster*, focusing on two distinct AOTU pathways (AOTU019 and AOTU025) that enable context-sensitive steering behavior. Using connectomics, electrophysiology, behavior, and modeling, we show how feedback loops implement flexible gain control during pursuit.
 
 ---
 
