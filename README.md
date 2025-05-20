@@ -2,7 +2,7 @@
 
 This repository accompanies the manuscript:
 
-**Collie, M.F., Jin, C., Kellogg, E., Vanderbeck, Q.X., Hartman, A.K., Hol, S.L., & Wilson, R.I.**  
+**Collie, M.F., Jin, C., Kellogg, E., Vanderbeck, Q.X., Hartman, A.K., Holtz, S.L., & Wilson, R.I.**  
 *Specialized parallel pathways for adaptive control of visual object pursuit*  
 [bioRxiv, 2025.](https://doi.org/10.1101/2025.04.23.650240)
 
