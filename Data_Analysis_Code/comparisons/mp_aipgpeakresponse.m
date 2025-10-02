@@ -19,8 +19,8 @@ dataPath = 'E:\Compare Motion Pulse\data';  % Define folder containing the .mat 
 cd(dataPath)
 
 % Define file paths
-AOTU019_file = fullfile(dataPath, 'AOTU019_Motion_Pulse_sweeppeaks_25_dps_All.mat');
-AOTU025_file = fullfile(dataPath, 'AOTU025_Motion_Pulse_sweeppeaks_25_dps_All.mat');
+AOTU019_file = fullfile(dataPath, 'AOTU019_aIPg_Motion_Pulse_sweeppeaks_25_dps_All.mat');
+AOTU025_file = fullfile(dataPath, 'AOTU025_aIPg_Motion_Pulse_sweeppeaks_25_dps_All.mat');
 
 mean_colors = {"#0072BD", "#7E2F8E"};  % Colors for AOTU019 and AOTU025
 

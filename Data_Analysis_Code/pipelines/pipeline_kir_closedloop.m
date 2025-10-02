@@ -1,15 +1,15 @@
 % pipeline_kir_closedloop
 %
 % This pipeline function processes and analyzes data from all flies
-% in a given closed-loop experiment. It pulls all relevant processed files, 
+% in a given closed-loop experiment. It pulls all relevant processed files,
 % performs the necessary analyses, and generates plots accordingly.
 %
 % INPUT:
-%   exptFolder - String representing the path to the overarching experiment 
+%   exptFolder - String representing the path to the overarching experiment
 %                folder containing processed data for all flies.
 %
-% Created: 08/23/2024 by MC
-% Adapted from the open loop pipeline
+% Created: 08/23/2024 MC Adapted from the open loop pipeline
+% Updated: 08/18/2025 MC made friendly to 1 gain conditions (aka 025)
 %
 function pipeline_kir_closedloop(exptFolder)
 %% Initialize
@@ -35,7 +35,11 @@ dataFiles = dir('*int.mat');
 nFlies = length(dataFiles);
 
 % Number of pursuit gains from settings
-nGain = length(settings.pursuitGain);
+if contains(exptFolder,'AOTU025 KIR')
+    nGain = 1;
+else
+    nGain = length(settings.pursuitGain);
+end
 
 % Minimum fixation time to include a fly (in seconds)
 minFixationTime = settings.minFixationTime;
@@ -44,6 +48,7 @@ minFixationTime = settings.minFixationTime;
 disp('Loading in and analyzing pursuit datasets...')
 nKIR = 0; nWT = 0; nNA = 0;  % Initialize counters for each group
 oKIR = 0; oWT = 0; oNA = 0;  % Initialize counters for omitted trials
+walkThresh = 1; %mm/s
 
 for e = 1:nFlies
     disp(['Processing fly ' num2str(e) '/' num2str(nFlies) '...'])
@@ -81,7 +86,8 @@ for e = 1:nFlies
         sp_out = setpoint_performance(fix_panelps, int_jumptrg, fix_forward, int_time, 0);
         freq_hd_out = setpoint_freq(fix_panelps, int_time, 0);
         freq_ang_out = setpoint_freq(fix_angular, int_time, 0);
-        [smallJumps, largeJumps] = setpoint_jumps(fix_panelps, int_jumptrg, int_time);
+        [smallJumps, largeJumps] = setpoint_jumps(fix_panelps, int_jumptrg, int_time); %binned
+        [objAtJump, corrTimes] = setpoint_jumps2(fix_panelps, int_jumptrg, int_time); %separated
         [posvang, posvangRL, posBins] = setpoint_errorvturn(fix_panelps, fix_angular, int_time, settings, 1, 0);
         [posvfwd, ~, ~] = setpoint_errorvturn(fix_panelps, fix_forward, int_time, settings, 0, 0);
         [~, posvangRL_byfwd, ~] = setpoint_errorvturn_byFwd(fix_panelps, fix_angular, fix_forward, int_time, settings, 1, 0);
@@ -92,7 +98,7 @@ for e = 1:nFlies
         [ang_maxbins, bins2] = setpoint_max_to_max(fix_panelps, fix_angular, int_jumptrg, int_time, 0);
         [medianFixationTimes, medianNonFixationTimes, medianFixationObjPos, medianNonFixationObjPos] = setpoint_crossings(int_panelps, int_angular, int_forward, thisFixation.idx_run, int_time, settings);
         [bc_output, binsbig] = setpoint_lrgchange(fix_panelps, fix_angular, int_jumptrg, int_time, 0);
-        
+
         fixidx_95x = thisFixation.idx_run(:,:,1);
         [fixation_percentage_P1, fixation_percentage_noP1] = compare_fixation_time(fixidx_95x, thisTrial, folder);
         [hist_noP1, hist_P1] = compare_panelpos_histogram(int_panelps(:,:,1), thisTrial, folder);
@@ -148,10 +154,12 @@ for e = 1:nFlies
             kirNotPos(nKIR,:) = medianNonFixationObjPos;
             kirJumpSmall(nKIR,:) = smallJumps;
             kirJumpLarge(nKIR,:) = largeJumps;
+            kirJumpAll_pos(nKIR,:) = objAtJump;
+            kirJumpAll_time(nKIR,:) = corrTimes;
 
             kirFixRatio(nKIR,1) = fixation_percentage_noP1;
             kirFixRatio(nKIR,2) = fixation_percentage_P1;
-            
+
             kirHDslow(:,nKIR) = hist_slow(:,2);
             kirHDfast(:,nKIR) = hist_fast(:,2);
             kirHDnoP1(:,nKIR) = hist_noP1(:,2);
@@ -196,6 +204,8 @@ for e = 1:nFlies
             wtNotPos(nWT,:) = medianNonFixationObjPos;
             wtJumpSmall(nWT,:) = smallJumps;
             wtJumpLarge(nWT,:) = largeJumps;
+            wtJumpAll_pos(nWT,:) = objAtJump;
+            wtJumpAll_time(nWT,:) = corrTimes;
 
             wtFixRatio(nWT,1) = fixation_percentage_noP1;
             wtFixRatio(nWT,2) = fixation_percentage_P1;
@@ -243,6 +253,8 @@ for e = 1:nFlies
             naNotPos(nNA,:) = medianNonFixationObjPos;
             naJumpSmall(nNA,:) = smallJumps;
             naJumpLarge(nNA,:) = largeJumps;
+            naJumpAll_pos(nNA,:) = objAtJump;
+            naJumpAll_time(nNA,:) = corrTimes;
 
             naFixRatio(nNA,1) = fixation_percentage_noP1;
             naFixRatio(nNA,2) = fixation_percentage_P1;
@@ -287,17 +299,17 @@ disp('Comparing base parameters...')
 close all
 
 % Call the general ANOVA function to analyze the contribution of genotype and gain to general performance
-[p_runTime, ~] = run_genotype_anova_repeated(kirRunTime(:, 1:nGain), wtRunTime(:, 1:nGain), naRunTime(:, 1:nGain), 'RunTime', folder);
-[p_runSpeed, ~] = run_genotype_anova_repeated(kirRunSpeed(:, 1:nGain), wtRunSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'RunSpeed', folder);
-[p_turnSpeed, ~] = run_genotype_anova_repeated(kirTurnSpeed(:, 1:nGain), wtTurnSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'TurnSpeed', folder);
+if filebase == 'AOTU019_KIR'
+    [p_runTime, ~] = run_genotype_anova_repeated(kirRunTime(:, 1:nGain), wtRunTime(:, 1:nGain), naRunTime(:, 1:nGain), 'RunTime', folder);
+    [p_runSpeed, ~] = run_genotype_anova_repeated(kirRunSpeed(:, 1:nGain), wtRunSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'RunSpeed', folder);
+    [p_turnSpeed, ~] = run_genotype_anova_repeated(kirTurnSpeed(:, 1:nGain), wtTurnSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'TurnSpeed', folder);
+    anova_pvals = {p_runTime, p_runSpeed, p_turnSpeed};
+end
 
 % Call the general ANOVA function to analyze the contribution of genotype to general performance
 [p_runTime2, ~] = run_genotype_anova1(kirRunTime(:, end), wtRunTime(:, end), naRunTime(:, end), 'RunTime2', folder);
 [p_runSpeed2, ~] = run_genotype_anova1(kirRunSpeed(:, end), wtRunSpeed(:, end), naRunSpeed(:, end), 'RunSpeed2', folder);
 [p_turnSpeed2, ~] = run_genotype_anova1(kirTurnSpeed(:, end), wtTurnSpeed(:, end), naRunSpeed(:, end), 'TurnSpeed2', folder);
-
-% Store p-values from ANOVA for each parameter
-anova_pvals = {p_runTime, p_runSpeed, p_turnSpeed};
 anova_pvals2 = {p_runTime2, p_runSpeed2, p_turnSpeed2};
 
 % Initialize figure
@@ -310,17 +322,14 @@ for p = 1:3
         case 1
             kirData = kirRunTime; wtData = wtRunTime; naData = naRunTime;
             nameData = 'Fixation Time (s)'; yrange = [0 400];
-            pval_text = ['p(gene) = ' num2str(anova_pvals{p}(1)) ', p(k) = ' num2str(anova_pvals{p}(2))];
             pval_text2 = ['p(gene) = ' num2str(anova_pvals2{p}(1))];
         case 2
             kirData = kirRunSpeed; wtData = wtRunSpeed; naData = naRunSpeed;
             nameData = 'Fwd Speed (mm/s)'; yrange = [0 20];
-            pval_text = ['p(gene) = ' num2str(anova_pvals{p}(1)) ', p(k) = ' num2str(anova_pvals{p}(2))];
             pval_text2 = ['p(gene) = ' num2str(anova_pvals2{p}(1))];
         case 3
             kirData = kirTurnSpeed; wtData = wtTurnSpeed; naData = naTurnSpeed;
             nameData = 'Turn Speed (deg/s)'; yrange = [0 150];
-            pval_text = ['p(gene) = ' num2str(anova_pvals{p}(1)) ', p(k) = ' num2str(anova_pvals{p}(2))];
             pval_text2 = ['p(gene) = ' num2str(anova_pvals2{p}(1))];
     end
 
@@ -331,20 +340,17 @@ for p = 1:3
 
     % Plot steering gain separately
     nexttile([1 3]); hold on
-    plot(settings.pursuitGain - 2, kirData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain - 2, kirMedian(1:nGain), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8)
-    
-    plot(settings.pursuitGain, wtData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain, wtMedian(1:nGain), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8)
-    
-    plot(settings.pursuitGain + 2, naData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain + 2, naMedian(1:nGain), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8)
+    plot(settings.pursuitGain(1:nGain) - 2, kirData(:, 1:nGain), '.', 'Color', settings.trialColor)
+    plot(settings.pursuitGain(1:nGain) - 2, kirMedian(1:nGain), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8)
 
-    axis padded; ylabel(nameData); xticks(settings.pursuitGain); ylim(yrange); xlabel('Steering Gain (k)')
+    plot(settings.pursuitGain(1:nGain), wtData(:, 1:nGain), '.', 'Color', settings.trialColor)
+    plot(settings.pursuitGain(1:nGain), wtMedian(1:nGain), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8)
+
+    plot(settings.pursuitGain(1:nGain) + 2, naData(:, 1:nGain), '.', 'Color', settings.trialColor)
+    plot(settings.pursuitGain(1:nGain) + 2, naMedian(1:nGain), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8)
+
+    axis padded; ylabel(nameData); xticks(settings.pursuitGain(1:nGain)); ylim(yrange); xlabel('Steering Gain (k)')
     if p == 1, yline(minFixationTime, ':'); end
-
-    % Add p-value annotation to the plot (top right corner)
-    text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
 
     % Plot steering gain together
     nexttile; hold on
@@ -390,97 +396,97 @@ disp('Complete.')
 
 
 %% Repeat for omitted flies
-% Call the general ANOVA function to analyze the contribution of genotype and gain to omitted data
-[p_oRunTime, ~] = run_genotype_anova_repeated(okirRunTime, owtRunTime, onaRunTime, 'Omitted_RunTime', folder);
-[p_oRunSpeed, ~] = run_genotype_anova_repeated(okirRunSpeed, owtRunSpeed, onaRunSpeed, 'Omitted_RunSpeed', folder);
-[p_oTurnSpeed, ~] = run_genotype_anova_repeated(okirTurnSpeed, owtTurnSpeed, onaTurnSpeed, 'Omitted_TurnSpeed', folder);
-
-% Store p-values from ANOVA for each omitted parameter
-anova_pvals_omitted = {p_oRunTime, p_oRunSpeed, p_oTurnSpeed};
-
-% Initialize omitted figure
-figure; set(gcf, 'Position', [100 100 600 800])
-tiledlayout(3, 4, 'TileSpacing', 'compact')
-
-for p = 1:3
-    % Fetch parameters for omitted data
-    switch p
-        case 1
-            kirData = okirRunTime; wtData = owtRunTime; naData = onaRunTime;
-            nameData = 'Fixation Time (s)'; yrange = [0 400];
-            pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
-        case 2
-            kirData = okirRunSpeed; wtData = owtRunSpeed; naData = onaRunSpeed;
-            nameData = 'Fwd Speed (mm/s)'; yrange = [0 30];
-            pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
-        case 3
-            kirData = okirTurnSpeed; wtData = owtTurnSpeed; naData = onaTurnSpeed;
-            nameData = 'Turn Speed (deg/s)'; yrange = [0 150];
-            pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
-    end
-
-    % Calculate median for each condition
-    kirMedian = median(kirData, 1, 'omitnan');
-    wtMedian = median(wtData, 1, 'omitnan');
-    naMedian = median(naData, 1, 'omitnan');
-
-    % Plot steering gain separately
-    nexttile([1 3]); hold on
-    plot(settings.pursuitGain - 2, kirData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain - 2, kirMedian(1:nGain), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8)
-    
-    plot(settings.pursuitGain, wtData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain, wtMedian(1:nGain), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8)
-    
-    plot(settings.pursuitGain + 2, naData(:, 1:nGain), '.', 'Color', settings.trialColor)
-    plot(settings.pursuitGain + 2, naMedian(1:nGain), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8)
-
-    axis padded; ylabel(nameData); xticks(settings.pursuitGain); ylim(yrange); xlabel('Steering Gain (k)')
-    if p == 1, yline(minFixationTime, ':'); end
-
-    % Add p-value annotation to the plot (top right corner)
-    text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
-
-    % Plot steering gain together
-    nexttile; hold on
-
-    % Define jitter magnitude
-    jitterMagnitude = 0.1;
-
-    % Plot Kir data with jitter
-    jitteredX_KIR = 1 + jitterMagnitude * (rand(1, oKIR) - 0.5);
-    plot(jitteredX_KIR, kirData(:, end), '.', 'Color', settings.trialColor);
-    plot(1, kirMedian(end), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8);
-
-    % Plot WT data with jitter
-    jitteredX_WT = 2 + jitterMagnitude * (rand(1, oWT) - 0.5);
-    plot(jitteredX_WT, wtData(:, end), '.', 'Color', settings.trialColor);
-    plot(2, wtMedian(end), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8);
-
-    % Plot NA data with jitter
-    jitteredX_NA = 3 + jitterMagnitude * (rand(1, oNA) - 0.5);
-    plot(jitteredX_NA, naData(:, end), '.', 'Color', settings.trialColor);
-    plot(3, naMedian(end), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8);
-
-
-    axis padded; ylabel(nameData); xlim([0 4]); xticks(1:3); xticklabels(settings.geneLabel); ylim(yrange); xlabel('Fly Average')
-    if p == 1, yline(minFixationTime, ':'); end
-end
-
-sgtitle([ 'Omitted Summary (n = ' num2str(oKIR) 'kir, ' num2str(oWT) 'wt, ' num2str(oNA) 'na)'])
-
-% Save omitted plot
-cd(folder.summary)
-plotname = 'basics_summary_omitted';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-
-% Save omitted vectorized plot
-cd(folder.vector)
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
-disp('Complete.')
+% % Call the general ANOVA function to analyze the contribution of genotype and gain to omitted data
+% [p_oRunTime, ~] = run_genotype_anova_repeated(okirRunTime, owtRunTime, onaRunTime, 'Omitted_RunTime', folder);
+% [p_oRunSpeed, ~] = run_genotype_anova_repeated(okirRunSpeed, owtRunSpeed, onaRunSpeed, 'Omitted_RunSpeed', folder);
+% [p_oTurnSpeed, ~] = run_genotype_anova_repeated(okirTurnSpeed, owtTurnSpeed, onaTurnSpeed, 'Omitted_TurnSpeed', folder);
+%
+% % Store p-values from ANOVA for each omitted parameter
+% anova_pvals_omitted = {p_oRunTime, p_oRunSpeed, p_oTurnSpeed};
+%
+% % Initialize omitted figure
+% figure; set(gcf, 'Position', [100 100 600 800])
+% tiledlayout(3, 4, 'TileSpacing', 'compact')
+%
+% for p = 1:3
+%     % Fetch parameters for omitted data
+%     switch p
+%         case 1
+%             kirData = okirRunTime; wtData = owtRunTime; naData = onaRunTime;
+%             nameData = 'Fixation Time (s)'; yrange = [0 400];
+%             pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
+%         case 2
+%             kirData = okirRunSpeed; wtData = owtRunSpeed; naData = onaRunSpeed;
+%             nameData = 'Fwd Speed (mm/s)'; yrange = [0 30];
+%             pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
+%         case 3
+%             kirData = okirTurnSpeed; wtData = owtTurnSpeed; naData = onaTurnSpeed;
+%             nameData = 'Turn Speed (deg/s)'; yrange = [0 150];
+%             pval_text = ['p(gene) = ' num2str(anova_pvals_omitted{p}(1)) ', p(k) = ' num2str(anova_pvals_omitted{p}(2))];
+%     end
+%
+%     % Calculate median for each condition
+%     kirMedian = median(kirData, 1, 'omitnan');
+%     wtMedian = median(wtData, 1, 'omitnan');
+%     naMedian = median(naData, 1, 'omitnan');
+%
+%     % Plot steering gain separately
+%     nexttile([1 3]); hold on
+%     plot(settings.pursuitGain - 2, kirData(:, 1:nGain), '.', 'Color', settings.trialColor)
+%     plot(settings.pursuitGain - 2, kirMedian(1:nGain), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8)
+%
+%     plot(settings.pursuitGain, wtData(:, 1:nGain), '.', 'Color', settings.trialColor)
+%     plot(settings.pursuitGain, wtMedian(1:nGain), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8)
+%
+%     plot(settings.pursuitGain + 2, naData(:, 1:nGain), '.', 'Color', settings.trialColor)
+%     plot(settings.pursuitGain + 2, naMedian(1:nGain), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8)
+%
+%     axis padded; ylabel(nameData); xticks(settings.pursuitGain); ylim(yrange); xlabel('Steering Gain (k)')
+%     if p == 1, yline(minFixationTime, ':'); end
+%
+%     % Add p-value annotation to the plot (top right corner)
+%     text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
+%
+%     % Plot steering gain together
+%     nexttile; hold on
+%
+%     % Define jitter magnitude
+%     jitterMagnitude = 0.1;
+%
+%     % Plot Kir data with jitter
+%     jitteredX_KIR = 1 + jitterMagnitude * (rand(1, oKIR) - 0.5);
+%     plot(jitteredX_KIR, kirData(:, end), '.', 'Color', settings.trialColor);
+%     plot(1, kirMedian(end), '_', 'Color', settings.geneColor{1}, 'MarkerSize', 8);
+%
+%     % Plot WT data with jitter
+%     jitteredX_WT = 2 + jitterMagnitude * (rand(1, oWT) - 0.5);
+%     plot(jitteredX_WT, wtData(:, end), '.', 'Color', settings.trialColor);
+%     plot(2, wtMedian(end), '_', 'Color', settings.geneColor{2}, 'MarkerSize', 8);
+%
+%     % Plot NA data with jitter
+%     jitteredX_NA = 3 + jitterMagnitude * (rand(1, oNA) - 0.5);
+%     plot(jitteredX_NA, naData(:, end), '.', 'Color', settings.trialColor);
+%     plot(3, naMedian(end), '_', 'Color', settings.geneColor{3}, 'MarkerSize', 8);
+%
+%
+%     axis padded; ylabel(nameData); xlim([0 4]); xticks(1:3); xticklabels(settings.geneLabel); ylim(yrange); xlabel('Fly Average')
+%     if p == 1, yline(minFixationTime, ':'); end
+% end
+%
+% sgtitle([ 'Omitted Summary (n = ' num2str(oKIR) 'kir, ' num2str(oWT) 'wt, ' num2str(oNA) 'na)'])
+%
+% % Save omitted plot
+% cd(folder.summary)
+% plotname = 'basics_summary_omitted';
+% saveas(gcf, [plotname '.png']);
+% copyfile([plotname '.png'], folder.dropbox, 'f');
+%
+% % Save omitted vectorized plot
+% cd(folder.vector)
+% set(gcf, 'renderer', 'Painters')
+% saveas(gcf, [plotname '.svg'])
+% copyfile([plotname '.svg'], folder.dropbox, 'f');
+% disp('Complete.')
 
 %% Compare fixation ratios
 % Initialize figure and tiled layout
@@ -503,7 +509,7 @@ for i = 1:3
 
     % Get fixation data for the current genotype
     fixRatio = fixRatios{i};
-    
+
     % X-coordinates for no P1 and P1 points
     x_coords = [1, 2];
 
@@ -548,7 +554,7 @@ data_all = [
     reshape(dependentVar_kir.', [], 1);
     reshape(dependentVar_wt.',  [], 1);
     reshape(dependentVar_na.',  [], 1)
-];
+    ];
 
 % Define categorical variables
 condition = repmat({'NoP1'; 'P1'}, [nKIR + nWT + nNA, 1]);
@@ -558,7 +564,7 @@ genotype = [
     repmat({'KIR'}, nKIR * 2, 1);
     repmat({'WT'},  nWT * 2, 1);
     repmat({'NA'},  nNA * 2, 1)
-];
+    ];
 genotype = categorical(genotype);
 
 % Assign animal ID (repeated per condition)
@@ -566,7 +572,7 @@ animalID = [
     repelem((1:nKIR)', 2);
     repelem((1:nWT)' + nKIR, 2);
     repelem((1:nNA)' + nKIR + nWT, 2)
-];
+    ];
 animalID = categorical(animalID);
 
 % Create table
@@ -671,14 +677,14 @@ nexttile(1); hold on
 
 % No P1 (black)
 patch([bin_interp, fliplr(bin_interp)], ...
-      [mean_noP1_smooth - sem_noP1_smooth, fliplr(mean_noP1_smooth + sem_noP1_smooth)], ...
-      'k', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [mean_noP1_smooth - sem_noP1_smooth, fliplr(mean_noP1_smooth + sem_noP1_smooth)], ...
+    'k', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 plot(bin_interp, mean_noP1_smooth, 'k-', 'LineWidth', 1.5);
 
 % P1 (red)
 patch([bin_interp, fliplr(bin_interp)], ...
-      [mean_P1_smooth - sem_P1_smooth, fliplr(mean_P1_smooth + sem_P1_smooth)], ...
-      'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [mean_P1_smooth - sem_P1_smooth, fliplr(mean_P1_smooth + sem_P1_smooth)], ...
+    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 plot(bin_interp, mean_P1_smooth, 'r-', 'LineWidth', 1.5);
 
 xlabel('Panel Position (°)');
@@ -688,28 +694,30 @@ title('Panel Position Histogram Across Genotypes');
 xlim([-180 180]); yline(0); box off;
 xticks(-150:30:150)
 
-% ==== Tile 2: Polar histogram - No P1 ====
-nexttile(3);
+% --- Make bin EDGES from your bin CENTERS (uniform bins assumed) ---
+bin_centers = bin_centers(:);                       % ensure column
+bin_width   = median(diff(bin_centers),'omitnan');  % degrees
+bin_edges_deg = [bin_centers - bin_width/2; bin_centers(end) + bin_width/2];
+bin_edges_rad = deg2rad(bin_edges_deg);             % radians
 
-polarhistogram('BinEdges', ...
-    [bin_edges_rad; bin_edges_rad(end)+median(diff(bin_edges_rad))]', ...
-    'BinCounts', mean_noP1, ...
+% ==== Tile 2: Polar histogram - No P1 ====
+rmax = 0.125;
+nexttile(3);
+polarhistogram('BinEdges', bin_edges_rad', ...
+    'BinCounts', mean_noP1(:), ...
     'FaceColor', 'k', 'FaceAlpha', 0.6, ...
     'Normalization', 'probability');
-rlim([0 0.1]);
+rlim([0 rmax]);
 title('Polar Histogram - No P1');
 
 % ==== Tile 3: Polar histogram - P1 ====
 nexttile(4);
-
-polarhistogram('BinEdges', ...
-    [bin_edges_rad; bin_edges_rad(end)+median(diff(bin_edges_rad))]', ...
-    'BinCounts', mean_P1, ...
+polarhistogram('BinEdges', bin_edges_rad', ...
+    'BinCounts', mean_P1(:), ...
     'FaceColor', 'r', 'FaceAlpha', 0.6, ...
     'Normalization', 'probability');
-rlim([0 0.1]);
+rlim([0 rmax]);
 title('Polar Histogram - P1');
-
 
 % Save the figure
 cd(folder.summary)
@@ -729,10 +737,13 @@ disp('Complete.');
 disp('Comparing optimal lag time...')
 
 % Call the general ANOVA function to analyze the contribution of genotype and gain to lag times
-[p_lag, ~] = run_genotype_anova_repeated(kirOptLag, wtOptLag, naOptLag, 'Visual-Motor Lag', folder);
-
-% Store p-values from ANOVA for the visual-motor lag plot
-pval_text_lag = ['p(gene) = ' num2str(p_lag(1)) ', p(k) = ' num2str(p_lag(2))];
+if exptFolder == 'AOTU019 KIR'
+    [p_lag, ~] = run_genotype_anova_repeated(kirOptLag, wtOptLag, naOptLag, 'Visual-Motor Lag', folder);
+    pval_text_lag = ['p(gene) = ' num2str(p_lag(1)) ', p(k) = ' num2str(p_lag(2))];
+else
+    [p_lag, ~] = run_genotype_anova1(kirOptLag, wtOptLag, naOptLag, 'Visual-Motor Lag', folder);
+    pval_text_lag = ['p(gene) = ' num2str(p_lag(1))];
+end
 
 % Initialize figure layout for optimal lag comparison
 figure; set(gcf, 'Position', [100 100 600 300])
@@ -743,21 +754,21 @@ nexttile([1, 5])
 for g = 1:3
     switch g
         case 1
-            this_lag = kirOptLag; thisN = nKIR; x = settings.pursuitGain - 2;
+            this_lag = kirOptLag; thisN = nKIR; x = settings.pursuitGain(1:nGain) - 2;
         case 2
-            this_lag = wtOptLag; thisN = nWT; x = settings.pursuitGain;
+            this_lag = wtOptLag; thisN = nWT; x = settings.pursuitGain(1:nGain);
         case 3
-            this_lag = naOptLag; thisN = nNA; x = settings.pursuitGain + 2;
+            this_lag = naOptLag; thisN = nNA; x = settings.pursuitGain(1:nGain) + 2;
     end
-    
+
     % Calculate median for each gain condition
     median_lag = median(this_lag, 'omitnan');
-    
+
     % Plot individual lag data points and dash markers for the median
     hold on
     plot(x, this_lag, '.', 'Color', settings.trialColor)      % Individual data points
     plot(x, median_lag, '_', 'Color', settings.geneColor{g}, 'MarkerSize', 8)  % Median as dash marker
-    axis padded; ylim([0 250]); xticks(settings.pursuitGain)
+    axis padded; ylim([0 250]); xticks(settings.pursuitGain(1:nGain))
     ylabel('Est. Visual-Motor Turn Lag (ms)');
 end
 xlabel('Steering Gain (X)')
@@ -800,8 +811,15 @@ for p = 1:5
     end
 
     % Call the general ANOVA function to analyze the contribution of genotype and gain
-    [p_val, ~] = run_genotype_anova_repeated(kirData, wtData, naData, nameData, folder);
-    anova_pvals_setpoint{p} = p_val;  % Store p-values
+    if exptFolder == 'AOTU019 KIR'
+        [p_val, ~] = run_genotype_anova_repeated(kirData, wtData, naData, nameData, folder);
+        anova_pvals_setpoint{p} = p_val;  % Store p-values
+        pval_text = {['p(gene) = ' num2str(anova_pvals_setpoint{p}(1))] ; ['p(k) = ' num2str(anova_pvals_setpoint{p}(2))] ; ['p(g*k) = ' num2str(anova_pvals_setpoint{p}(3))]};
+    else
+        [p_val, ~] = run_genotype_anova1(kirData, wtData, naData, nameData, folder);
+        anova_pvals_setpoint{p} = p_val;  % Store p-values
+        pval_text = {['p(gene) = ' num2str(anova_pvals_setpoint{p}(1))]};
+    end
 
     % Calculate median and SEM for each condition
     kirMedian = median(kirData, 1, 'omitnan'); kirSEM = std(kirData, 0, 1, 'omitnan') ./ sqrt(nKIR);
@@ -810,13 +828,12 @@ for p = 1:5
 
     % Plot data with error bars for KIR, WT, and NA without caps
     nexttile; hold on
-    errorbar(settings.pursuitGain, kirMedian, kirSEM, '-', 'Color', settings.geneColor{1}, 'CapSize', 0)
-    errorbar(settings.pursuitGain, wtMedian, wtSEM, '-', 'Color', settings.geneColor{2}, 'CapSize', 0)
-    errorbar(settings.pursuitGain, naMedian, naSEM, '-', 'Color', settings.geneColor{3}, 'CapSize', 0)
+    errorbar(settings.pursuitGain(1:nGain)-2, kirMedian, kirSEM, '-', 'Color', settings.geneColor{1}, 'CapSize', 0)
+    errorbar(settings.pursuitGain(1:nGain), wtMedian, wtSEM, '-', 'Color', settings.geneColor{2}, 'CapSize', 0)
+    errorbar(settings.pursuitGain(1:nGain)+2, naMedian, naSEM, '-', 'Color', settings.geneColor{3}, 'CapSize', 0)
     axis padded; ylim(yrange); xticks(settings.pursuitGain); ylabel(nameData); xlabel('k')
 
     % Add p-value annotation to the plot (top right corner)
-    pval_text = {['p(gene) = ' num2str(anova_pvals_setpoint{p}(1))] ; ['p(k) = ' num2str(anova_pvals_setpoint{p}(2))] ; ['p(g*k) = ' num2str(anova_pvals_setpoint{p}(3))]};
     if p == 5
         text(0.5, 0.5, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
     else
@@ -1215,7 +1232,7 @@ set(gcf,'renderer','Painters')
 saveas(gcf, [plotname '.svg']);
 copyfile([plotname '.svg'], folder.dropbox,'f');
 
-% save zoomed version
+%% save zoomed version
 % Zoom into the plot for each condition
 for c = 1:nGain
     nexttile(c); ylim([-130 130]); xlim([-40 40])
@@ -1263,7 +1280,7 @@ for g = 1:3
 
     % Plot EVT with SEM
     plot(posBins, meanEVT, 'Color', evt_color, 'LineWidth', settings.lwAvg)
-    
+
     % Plot SEM using patch
     sem_patch = patch([posBins'; flipud(posBins')], ...
         [meanEVT - semEVT; flipud(meanEVT + semEVT)], ...
@@ -1322,9 +1339,13 @@ wtSlopes = cell2mat(wtSlopes);
 naSlopes = cell2mat(naSlopes);
 
 % Call the general ANOVA function to analyze the contribution of genotype and gain to lag times
-[p_evt, ~] = run_genotype_anova_repeated(kirSlopes', wtSlopes', naSlopes', 'Error_V_Turn', folder);
-% Store p-values from ANOVA for the visual-motor lag plot
-pval_text_evt = {['p(gene) = ' num2str(p_evt(1))];['p(k) = ' num2str(p_evt(2))]};
+if exptFolder == 'AOTU019 KIR'
+    [p_evt, ~] = run_genotype_anova_repeated(kirSlopes', wtSlopes', naSlopes', 'Error_V_Turn', folder);
+    pval_text_evt = {['p(gene) = ' num2str(p_evt(1))];['p(k) = ' num2str(p_evt(2))]};
+else
+    [p_evt, ~] = run_genotype_anova1(kirSlopes', wtSlopes', naSlopes', 'Error_V_Turn', folder);
+    pval_text_evt = {['p(gene) = ' num2str(p_evt(1))]};
+end
 
 % Initialize figure for separate plot
 figure; set(gcf,'Position',[100 100 1200 900])  % Adjust width and height for 4 columns, nGain rows
@@ -1340,44 +1361,44 @@ naColor = settings.geneColor{3};
 for c = 1:nGain
     % Column 1: Linear fits for each condition
     nexttile; hold on
-    
+
     % Kir group
     kirGroupSlopes = kirSlopes(c,:); % this condition
     kirSlope = mean(kirGroupSlopes);  % Mean slope for plotting fit
     kirCICond = kirCI{c}.slope;  % Confidence interval for the slope
     kirFitLine = kirSlope * posBinsRestricted;  % Fit line
-    
+
     % WT group
     wtGroupSlopes = wtSlopes(c,:);
     wtSlope = mean(wtGroupSlopes);
     wtCICond = wtCI{c}.slope;
     wtFitLine = wtSlope * posBinsRestricted;
-    
+
     % NA group
     naGroupSlopes = naSlopes(c,:);
     naSlope = mean(naGroupSlopes);
     naCICond = naCI{c}.slope;
     naFitLine = naSlope * posBinsRestricted;
-    
+
     % Plot linear fits and confidence intervals using patch
     plot(posBinsRestricted, kirFitLine, 'Color', kirColor, 'LineWidth', settings.lwAvg)
     kir_patch = patch([posBinsRestricted'; flipud(posBinsRestricted')], ...
         [(kirFitLine + kirCICond(2))'; flipud((kirFitLine - kirCICond(1))')], ...
         'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
     kir_patch.FaceColor = kirColor;
-    
+
     plot(posBinsRestricted, wtFitLine, 'Color', wtColor, 'LineWidth', settings.lwAvg)
     wt_patch = patch([posBinsRestricted'; flipud(posBinsRestricted')], ...
         [(wtFitLine + wtCICond(2))'; flipud((wtFitLine - wtCICond(1))')], ...
         'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
     wt_patch.FaceColor = wtColor;
-    
+
     plot(posBinsRestricted, naFitLine, 'Color', naColor, 'LineWidth', settings.lwAvg)
     na_patch = patch([posBinsRestricted'; flipud(posBinsRestricted')], ...
         [(naFitLine + naCICond(2))'; flipud((naFitLine - naCICond(1))')], ...
         'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
     na_patch.FaceColor = naColor;
-    
+
     % Set axis limits and labels
     xlim([-rangeValue rangeValue]);  % Show the specified range
     ylim(angLim)
@@ -1385,42 +1406,42 @@ for c = 1:nGain
     if c == nGain, xlabel('Object Position (deg)'); end
     ylabel('AngVel (deg/s)')
     title([num2str(settings.pursuitGain(c)) 'X - Linear Fits']);
-    
+
     % Column 2: KDE of slopes for each genotype
     nexttile; hold on
     bandwidth = 0.25;  % Adjust this value as needed
-    
+
     % Plot KDE for each genotype (distributions of slopes for each condition)
     [fKir, xiKir] = ksdensity(kirGroupSlopes, 'Bandwidth', bandwidth);  % KDE for KIR group slopes
     [fWt, xiWt] = ksdensity(wtGroupSlopes, 'Bandwidth', bandwidth);    % KDE for WT group slopes
     [fNa, xiNa] = ksdensity(naGroupSlopes, 'Bandwidth', bandwidth);    % KDE for NA group slopes
-    
+
     % Plot the KDE curves for slopes
     plot(xiKir, fKir, 'Color', kirColor, 'LineWidth', settings.lwAvg)
     plot(xiWt, fWt, 'Color', wtColor, 'LineWidth', settings.lwAvg)
     plot(xiNa, fNa, 'Color', naColor, 'LineWidth', settings.lwAvg)
     xlim([0 7])
-    
+
     % Add labels and title
     if c == nGain, xlabel('Slope (Angular Velocity / Object Position)'); end
     ylabel('Density')
     title([num2str(settings.pursuitGain(c)) 'X - Slope KDE']);
-    
+
     % Column 3: KDE of r values for each genotype
     nexttile; hold on
     bandwidth = 0.0075;  % Adjust this value as needed
-    
+
     % Plot KDE for each genotype (distributions of r values for each condition)
     [fKirR, xiKirR] = ksdensity(kirR{c}, 'Bandwidth', bandwidth);  % KDE for KIR group r values
     [fWtR, xiWtR] = ksdensity(wtR{c}, 'Bandwidth', bandwidth);    % KDE for WT group r values
     [fNaR, xiNaR] = ksdensity(naR{c}, 'Bandwidth', bandwidth);    % KDE for NA group r values
-    
+
     % Plot the KDE curves for r values
     plot(xiKirR, fKirR, 'Color', kirColor, 'LineWidth', settings.lwAvg)
     plot(xiWtR, fWtR, 'Color', wtColor, 'LineWidth', settings.lwAvg)
     plot(xiNaR, fNaR, 'Color', naColor, 'LineWidth', settings.lwAvg)
     xlim([0.4 1.1]); xline(1,':')
-    
+
     % Add labels and title
     if c == nGain, xlabel('R-Squared (r values)'); end
     ylabel('Density')
@@ -1453,7 +1474,7 @@ posBinsRestricted = posBins(rangeMask);
 
 % Initialize figure for separate plot
 figure; set(gcf,'Position',[100 100 1200 400])
-tiledlayout(1, 4, 'TileSpacing', 'compact') 
+tiledlayout(1, 4, 'TileSpacing', 'compact')
 angLim = [-110 110];
 
 % Call the fitting function once to get the outputs for all conditions
@@ -1544,10 +1565,10 @@ medianColor = 'k';  % Black color for median marker
 for i = 1:length(genotypes)
     % Add jitter to x-position for each data point
     xJitter = i + jitterAmount * (rand(size(slopeMeans{i})) - 0.5);
-    
+
     % Scatter plot with grey '.' markers
     scatter(xJitter, slopeMeans{i}, 'Marker', '.', 'MarkerEdgeColor', [0.5 0.5 0.5]);
-    
+
     % Plot median with a black diamond marker
     medianValue = median(slopeMeans{i});
     plot(i, medianValue, '_', 'MarkerFaceColor', medianColor, 'MarkerEdgeColor', medianColor);
@@ -1910,110 +1931,110 @@ disp('Complete.')
 
 
 %% Direction change v object crossing binned by crossing
-% compare relationship between max turn and time of crossing binned
-% Initialize figure for combined plot
-figure; set(gcf,'Position',[100 100 1200 900])
-tiledlayout(5, nGain, 'TileSpacing', 'compact')
 lagrange = [80 220];
 angrange = [0 220];
 dc_velbins = bins.ang2;
 
-% Plot separately for each group
-for g = 1:3
-    % Fetch data for each group
-    switch g
-        case 1
-            thisBinned = kirDCAngCrossBins;
-            thisN = nKIR;
-        case 2
-            thisBinned = wtDCAngCrossBins;
-            thisN = nWT;
-        case 3
-            thisBinned = naDCAngCrossBins;
-            thisN = nNA;
+if exptFolder == 'AOTU019 KIR'
+    % compare relationship between max turn and time of crossing binned
+    % Initialize figure for combined plot
+    figure; set(gcf,'Position',[100 100 1200 900])
+    tiledlayout(5, nGain, 'TileSpacing', 'compact')
+
+    % Plot separately for each group
+    for g = 1:3
+        % Fetch data for each group
+        switch g
+            case 1
+                thisBinned = kirDCAngCrossBins;
+                thisN = nKIR;
+            case 2
+                thisBinned = wtDCAngCrossBins;
+                thisN = nWT;
+            case 3
+                thisBinned = naDCAngCrossBins;
+                thisN = nNA;
+        end
+
+        % Calculate mean
+        meanBinned = mean(thisBinned, 3, 'omitnan');
+
+        % Plot for each condition
+        for c = 1:nGain
+            nexttile; hold on
+            plot(dc_velbins, reshape(thisBinned(:,c,:), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
+            plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+            xlim(angrange); ylim(lagrange)
+            if c == 1
+                ylabel({'Direction Change (ms)'})
+            end
+            if g == 1
+                title([num2str(settings.pursuitGain(c)) 'X'])
+            end
+        end
     end
 
-    % Calculate mean
-    meanBinned = mean(thisBinned, 3, 'omitnan');
+    % Plot together
+    % Calculate mean and SEM across gains for each genotype
+    meanKIR = mean(kirDCAngCrossBins, 3, 'omitnan');
+    meanWT = mean(wtDCAngCrossBins, 3, 'omitnan');
+    meanNA = mean(naDCAngCrossBins, 3, 'omitnan');
+    semKIR = std(kirDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
+    semWT = std(wtDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nWT);
+    semNA = std(naDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nNA);
 
-    % Plot for each condition
+    % Run three-way ANOVA on DCAngBins data (assuming each genotype is in the corresponding variable)
+    [p, ~] = run_genotype_anova3_repeated(kirDCAngCrossBins, wtDCAngCrossBins, naDCAngCrossBins, dc_velbins, 'DirectionChangeSep', folder);
+    pval_text = {['p(gene) = ' num2str(p(1)) ] [ 'p(gain) = ' num2str(p(2)) ] [ 'p(angbin) = ' num2str(p(3))]};
+
+    % Plot setpoint performance metrics
     for c = 1:nGain
-        nexttile; hold on
-        plot(dc_velbins, reshape(thisBinned(:,c,:), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
-        plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+        nexttile([2, 1]); hold on
+        % Plot KIR
+        plot(dc_velbins(:), meanKIR(:, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
+        sem1 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
+            [meanKIR(:, c) - semKIR(:, c); flipud(meanKIR(:, c) + semKIR(:, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem1.FaceColor = settings.geneColor{1};
+
+        % Plot WT
+        plot(dc_velbins(:), meanWT(:, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
+        sem2 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
+            [meanWT(:, c) - semWT(:, c); flipud(meanWT(:, c) + semWT(:, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem2.FaceColor = settings.geneColor{2};
+
+        % Plot NA
+        plot(dc_velbins(:), meanNA(:, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
+        sem3 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
+            [meanNA(:, c) - semNA(:, c); flipud(meanNA(:, c) + semNA(:, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem3.FaceColor = settings.geneColor{3};
         xlim(angrange); ylim(lagrange)
+        title([num2str(settings.pursuitGain(c)) 'X'])
         if c == 1
-            ylabel({'Direction Change (ms)'})
+            ylabel({'Time to Angular Velocity', 'Direction Change (ms)'})
         end
-        if g == 1
-            title([num2str(settings.pursuitGain(c)) 'X'])
-        end
+        xlabel({'Rotational Velocity', 'at Obj Crossing (deg/s)'})
     end
+
+    % Add p-value annotation to the last plot (top left corner)
+    text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
+
+    sgtitle({'Time to Angular Velocity Direction Change After Object Crossing Midline', 'Binned by Rotational Velocity at Object Crossing'})
+
+    % Save plot
+    cd(folder.summary)
+    plotname = 'dirchange_timing_angcrossbin';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    % Save vectorized plot
+    cd(folder.vector)
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 end
-
-% Plot together
-% Calculate mean and SEM across gains for each genotype
-meanKIR = mean(kirDCAngCrossBins, 3, 'omitnan');
-meanWT = mean(wtDCAngCrossBins, 3, 'omitnan');
-meanNA = mean(naDCAngCrossBins, 3, 'omitnan');
-semKIR = std(kirDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
-semWT = std(wtDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nWT);
-semNA = std(naDCAngCrossBins, 0, 3, 'omitnan') ./ sqrt(nNA);
-
-% Run three-way ANOVA on DCAngBins data (assuming each genotype is in the corresponding variable)
-[p, ~] = run_genotype_anova3_repeated(kirDCAngCrossBins, wtDCAngCrossBins, naDCAngCrossBins, dc_velbins, 'DirectionChangeSep', folder);
-
-% Store p-values from ANOVA
-pval_text = {['p(gene) = ' num2str(p(1)) ] [ 'p(gain) = ' num2str(p(2)) ] [ 'p(angbin) = ' num2str(p(3))]};
-
-% Plot setpoint performance metrics
-for c = 1:nGain
-    nexttile([2, 1]); hold on
-    % Plot KIR
-    plot(dc_velbins(:), meanKIR(:, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
-    sem1 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
-                 [meanKIR(:, c) - semKIR(:, c); flipud(meanKIR(:, c) + semKIR(:, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem1.FaceColor = settings.geneColor{1};
-
-    % Plot WT
-    plot(dc_velbins(:), meanWT(:, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
-    sem2 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
-                 [meanWT(:, c) - semWT(:, c); flipud(meanWT(:, c) + semWT(:, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem2.FaceColor = settings.geneColor{2};
-
-    % Plot NA
-    plot(dc_velbins(:), meanNA(:, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
-    sem3 = patch([dc_velbins(:); flipud(dc_velbins(:))], ...
-                 [meanNA(:, c) - semNA(:, c); flipud(meanNA(:, c) + semNA(:, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem3.FaceColor = settings.geneColor{3};
-    xlim(angrange); ylim(lagrange)
-    title([num2str(settings.pursuitGain(c)) 'X'])
-    if c == 1
-        ylabel({'Time to Angular Velocity', 'Direction Change (ms)'})
-    end
-    xlabel({'Rotational Velocity', 'at Obj Crossing (deg/s)'})
-end
-
-% Add p-value annotation to the last plot (top left corner)
-text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, ...
-     'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
-
-sgtitle({'Time to Angular Velocity Direction Change After Object Crossing Midline', 'Binned by Rotational Velocity at Object Crossing'})
-
-% Save plot
-cd(folder.summary)
-plotname = 'dirchange_timing_angcrossbin';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-% Save vectorized plot
-cd(folder.vector)
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
-
 
 % Initialize figure for combined
 figure; set(gcf,'Position',[100 100 500 900])
@@ -2141,119 +2162,121 @@ saveas(gcf, [plotname '.svg'])
 copyfile([plotname '.svg'], folder.dropbox, 'f');
 
 %% Direction change v object crossing binned by prior
-% compare relationship between max turn and time of crossing binned
-% Initialize figure for combined plot
-figure; set(gcf,'Position',[100 100 1200 900])
-tiledlayout(5, nGain, 'TileSpacing', 'compact')
 lagrange = [80 220];
 angrange = [0 220];
 dc_velbins = bins.ang2;
 
-% Plot separately for each group
-for g = 1:3
-    % Fetch data for each group
-    switch g
-        case 1
-            thisBinned = kirDCAngPriorBins;
-            thisN = nKIR;
-        case 2
-            thisBinned = wtDCAngPriorBins;
-            thisN = nWT;
-        case 3
-            thisBinned = naDCAngPriorBins;
-            thisN = nNA;
+if exptFolder == 'AOTU019 KIR'
+    % compare relationship between max turn and time of crossing binned
+    % Initialize figure for combined plot
+    figure; set(gcf,'Position',[100 100 1200 900])
+    tiledlayout(5, nGain, 'TileSpacing', 'compact')
+
+    % Plot separately for each group
+    for g = 1:3
+        % Fetch data for each group
+        switch g
+            case 1
+                thisBinned = kirDCAngPriorBins;
+                thisN = nKIR;
+            case 2
+                thisBinned = wtDCAngPriorBins;
+                thisN = nWT;
+            case 3
+                thisBinned = naDCAngPriorBins;
+                thisN = nNA;
+        end
+
+        % Calculate mean
+        meanBinned = mean(thisBinned, 3, 'omitnan');
+
+        % Plot for each condition
+        for c = 1:nGain
+            nexttile; hold on
+            plot(dc_velbins, reshape(thisBinned(:,c,:), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
+            plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+            xlim(angrange); ylim(lagrange)
+            set(gca, 'XScale', 'log')  % Set x-axis to log scale
+            set(gca, 'XTick', dc_velbins)
+            if c == 1
+                ylabel({'Direction Change (ms)'})
+            end
+            if g == 1
+                title([num2str(settings.pursuitGain(c)) 'X'])
+            end
+        end
     end
 
-    % Calculate mean
-    meanBinned = mean(thisBinned, 3, 'omitnan');
+    % Plot together
+    % Calculate mean and SEM across gains for each genotype
+    meanKIR = mean(kirDCAngPriorBins, 3, 'omitnan');
+    meanWT = mean(wtDCAngPriorBins, 3, 'omitnan');
+    meanNA = mean(naDCAngPriorBins, 3, 'omitnan');
+    semKIR = std(kirDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
+    semWT = std(wtDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nWT);
+    semNA = std(naDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nNA);
 
-    % Plot for each condition
+    % Run three-way ANOVA on DCAngBins data (assuming each genotype is in the corresponding variable)
+    [p, ~] = run_genotype_anova3_repeated(kirDCAngPriorBins, wtDCAngPriorBins, naDCAngPriorBins, dc_velbins, 'DirectionChangePriorSep', folder);
+
+    % Store p-values from ANOVA
+    pval_text = {['p(gene) = ' num2str(p(1)) ] [ 'p(gain) = ' num2str(p(2)) ] [ 'p(angbin) = ' num2str(p(3))]};
+
+    % Plot setpoint performance metrics
     for c = 1:nGain
-        nexttile; hold on
-        plot(dc_velbins, reshape(thisBinned(:,c,:), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
-        plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+        validkir = sum(~isnan(kirDCAngPriorBins(:,c,:)), 3) > nKIR / 3;
+        validwt = sum(~isnan(wtDCAngPriorBins(:,c,:)), 3) > nWT / 3;
+        validna = sum(~isnan(naDCAngPriorBins(:,c,:)), 3) > nNA / 3;
+
+        nexttile([2, 1]); hold on
+        % Plot KIR
+        plot(dc_velbins(validkir), meanKIR(validkir, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
+        sem1 = patch([dc_velbins(validkir)'; flipud(dc_velbins(validkir)')], ...
+            [meanKIR(validkir, c) - semKIR(validkir, c); flipud(meanKIR(validkir, c) + semKIR(validkir, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem1.FaceColor = settings.geneColor{1};
+
+        % Plot WT
+        plot(dc_velbins(validwt), meanWT(validwt, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
+        sem2 = patch([dc_velbins(validwt)'; flipud(dc_velbins(validwt)')], ...
+            [meanWT(validwt, c) - semWT(validwt, c); flipud(meanWT(validwt, c) + semWT(validwt, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem2.FaceColor = settings.geneColor{2};
+
+        % Plot NA
+        plot(dc_velbins(validna), meanNA(validna, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
+        sem3 = patch([dc_velbins(validna)'; flipud(dc_velbins(validna)')], ...
+            [meanNA(validna, c) - semNA(validna, c); flipud(meanNA(validna, c) + semNA(validna, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+        sem3.FaceColor = settings.geneColor{3};
+
         xlim(angrange); ylim(lagrange)
         set(gca, 'XScale', 'log')  % Set x-axis to log scale
         set(gca, 'XTick', dc_velbins)
+        title([num2str(settings.pursuitGain(c)) 'X'])
         if c == 1
-            ylabel({'Direction Change (ms)'})
+            ylabel({'Time to Angular Velocity', 'Direction Change (ms)'})
         end
-        if g == 1
-            title([num2str(settings.pursuitGain(c)) 'X'])
-        end
+        xlabel({'Rotational Velocity', 'Max Prior (deg/s)'})
     end
+
+    % Add p-value annotation to the last plot (top left corner)
+    text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
+
+    sgtitle({'Time to Angular Velocity Direction Change After Object Crossing Midline', 'Binned by Rotational Velocity Max of Prior Turn'})
+
+    % Save plot
+    cd(folder.summary)
+    plotname = 'dirchange_timing_angpriorbin';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    % Save vectorized plot
+    cd(folder.vector)
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 end
-
-% Plot together
-% Calculate mean and SEM across gains for each genotype
-meanKIR = mean(kirDCAngPriorBins, 3, 'omitnan');
-meanWT = mean(wtDCAngPriorBins, 3, 'omitnan');
-meanNA = mean(naDCAngPriorBins, 3, 'omitnan');
-semKIR = std(kirDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
-semWT = std(wtDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nWT);
-semNA = std(naDCAngPriorBins, 0, 3, 'omitnan') ./ sqrt(nNA);
-
-% Run three-way ANOVA on DCAngBins data (assuming each genotype is in the corresponding variable)
-[p, ~] = run_genotype_anova3_repeated(kirDCAngPriorBins, wtDCAngPriorBins, naDCAngPriorBins, dc_velbins, 'DirectionChangePriorSep', folder);
-
-% Store p-values from ANOVA
-pval_text = {['p(gene) = ' num2str(p(1)) ] [ 'p(gain) = ' num2str(p(2)) ] [ 'p(angbin) = ' num2str(p(3))]};
-
-% Plot setpoint performance metrics
-for c = 1:nGain
-    validkir = sum(~isnan(kirDCAngPriorBins(:,c,:)), 3) > nKIR / 3;
-    validwt = sum(~isnan(wtDCAngPriorBins(:,c,:)), 3) > nWT / 3;
-    validna = sum(~isnan(naDCAngPriorBins(:,c,:)), 3) > nNA / 3;
-
-    nexttile([2, 1]); hold on
-    % Plot KIR
-    plot(dc_velbins(validkir), meanKIR(validkir, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
-    sem1 = patch([dc_velbins(validkir)'; flipud(dc_velbins(validkir)')], ...
-                 [meanKIR(validkir, c) - semKIR(validkir, c); flipud(meanKIR(validkir, c) + semKIR(validkir, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem1.FaceColor = settings.geneColor{1};
-
-    % Plot WT
-    plot(dc_velbins(validwt), meanWT(validwt, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
-    sem2 = patch([dc_velbins(validwt)'; flipud(dc_velbins(validwt)')], ...
-                 [meanWT(validwt, c) - semWT(validwt, c); flipud(meanWT(validwt, c) + semWT(validwt, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem2.FaceColor = settings.geneColor{2};
-
-    % Plot NA
-    plot(dc_velbins(validna), meanNA(validna, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
-    sem3 = patch([dc_velbins(validna)'; flipud(dc_velbins(validna)')], ...
-                 [meanNA(validna, c) - semNA(validna, c); flipud(meanNA(validna, c) + semNA(validna, c))], ...
-                 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
-    sem3.FaceColor = settings.geneColor{3};
-
-    xlim(angrange); ylim(lagrange)
-    set(gca, 'XScale', 'log')  % Set x-axis to log scale
-    set(gca, 'XTick', dc_velbins)
-    title([num2str(settings.pursuitGain(c)) 'X'])
-    if c == 1
-        ylabel({'Time to Angular Velocity', 'Direction Change (ms)'})
-    end
-    xlabel({'Rotational Velocity', 'Max Prior (deg/s)'})
-end
-
-% Add p-value annotation to the last plot (top left corner)
-text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, ...
-     'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
-
-sgtitle({'Time to Angular Velocity Direction Change After Object Crossing Midline', 'Binned by Rotational Velocity Max of Prior Turn'})
-
-% Save plot
-cd(folder.summary)
-plotname = 'dirchange_timing_angpriorbin';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-% Save vectorized plot
-cd(folder.vector)
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
-
 
 % Initialize figure for combined
 figure; set(gcf,'Position',[100 100 300 900])
@@ -2319,22 +2342,22 @@ nexttile([2, 1]); hold on
 % Plot KIR
 plot(dc_velbins, meanKIR_across, 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
 semPatchKIR = patch([dc_velbins'; flipud(dc_velbins')], ...
-                    [meanKIR_across - semKIR_across; flipud(meanKIR_across + semKIR_across)], ...
-                    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [meanKIR_across - semKIR_across; flipud(meanKIR_across + semKIR_across)], ...
+    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 semPatchKIR.FaceColor = settings.geneColor{1};
 
 % Plot WT
 plot(dc_velbins, meanWT_across, 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
 semPatchWT = patch([dc_velbins'; flipud(dc_velbins')], ...
-                   [meanWT_across - semWT_across; flipud(meanWT_across + semWT_across)], ...
-                   'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [meanWT_across - semWT_across; flipud(meanWT_across + semWT_across)], ...
+    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 semPatchWT.FaceColor = settings.geneColor{2};
 
 % Plot NA
 plot(dc_velbins, meanNA_across, 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
 semPatchNA = patch([dc_velbins'; flipud(dc_velbins')], ...
-                   [meanNA_across - semNA_across; flipud(meanNA_across + semNA_across)], ...
-                   'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [meanNA_across - semNA_across; flipud(meanNA_across + semNA_across)], ...
+    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 semPatchNA.FaceColor = settings.geneColor{3};
 
 % Add p-value annotation to the plot (top left corner)
@@ -2360,346 +2383,425 @@ saveas(gcf, [plotname '.svg'])
 copyfile([plotname '.svg'], folder.dropbox, 'f');
 
 %% compare relationship between max-to-max time and max angular velocity binned
-
-% Initialize figure for combined plot
-figure; set(gcf, 'Position', [100 100 1200 900])
-tiledlayout(5, nGain, 'TileSpacing', 'compact')
 lagrange = [0 300]; % Time range in ms
 angrange = [0 220];   % Max angular velocity range in deg/s
 dc_velbins = bins.ang2;
 
-% Plot separately for each group
-for g = 1:3
-    % Fetch data for each group
-    switch g
-        case 1
-            thisBinned = kirMCAngBins;
-            thisN = nKIR;
-        case 2
-            thisBinned = wtMCAngBins;
-            thisN = nWT;
-        case 3
-            thisBinned = naMCAngBins;
-            thisN = nNA;
+if exptFolder == 'AOTU019 KIR'
+    % Initialize figure for combined plot
+    figure; set(gcf, 'Position', [100 100 1200 900])
+    tiledlayout(5, nGain, 'TileSpacing', 'compact')
+
+    % Plot separately for each group
+    for g = 1:3
+        % Fetch data for each group
+        switch g
+            case 1
+                thisBinned = kirMCAngBins;
+                thisN = nKIR;
+            case 2
+                thisBinned = wtMCAngBins;
+                thisN = nWT;
+            case 3
+                thisBinned = naMCAngBins;
+                thisN = nNA;
+        end
+
+        % Calculate mean across animals for each bin and gain condition
+        meanBinned = mean(thisBinned, 3, 'omitnan');
+
+        % Plot for each gain condition
+        for c = 1:nGain
+            nexttile; hold on
+            plot(dc_velbins, reshape(thisBinned(:, c, :), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
+            plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+            xlim(angrange); ylim(lagrange)
+            if c == 1
+                ylabel({'Max-to-Max Time (ms)'})
+            end
+            if g == 1
+                title([num2str(settings.pursuitGain(c)) 'X'])
+            end
+        end
     end
 
-    % Calculate mean across animals for each bin and gain condition
-    meanBinned = mean(thisBinned, 3, 'omitnan');
+    % Plot all genotypes together
+    % Calculate mean and SEM across gain conditions for each genotype
+    meanKIR = mean(kirMCAngBins, 3, 'omitnan');
+    meanWT = mean(wtMCAngBins, 3, 'omitnan');
+    meanNA = mean(naMCAngBins, 3, 'omitnan');
+    semKIR = std(kirMCAngBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
+    semWT = std(wtMCAngBins, 0, 3, 'omitnan') ./ sqrt(nWT);
+    semNA = std(naMCAngBins, 0, 3, 'omitnan') ./ sqrt(nNA);
 
-    % Plot for each gain condition
+    % Run three-way ANOVA on MCAngBins data (assuming each genotype is in the corresponding variable)
+    [p, ~] = run_genotype_anova3_repeated(kirMCAngBins, wtMCAngBins, naMCAngBins, dc_velbins, 'MaxToMaxSep', folder);
+
+    % Store p-values from ANOVA
+    pval_text = {['p(gene) = ' num2str(p(1))] ['p(gain) = ' num2str(p(2))] ['p(angbin) = ' num2str(p(3))]};
+
+    % Plot combined results
     for c = 1:nGain
-        nexttile; hold on
-        plot(dc_velbins, reshape(thisBinned(:, c, :), [], thisN), 'Color', settings.trialColor, 'Linewidth', settings.lwTri)
-        plot(dc_velbins, meanBinned(:, c), 'Color', settings.geneColor{g}, 'Linewidth', settings.lwAvg)
+        validkir = sum(~isnan(kirMCAngBins(:, c, :)), 3) > nKIR / 3;
+        validwt = sum(~isnan(wtMCAngBins(:, c, :)), 3) > nWT / 3;
+        validna = sum(~isnan(naMCAngBins(:, c, :)), 3) > nNA / 3;
+
+        nexttile([2, 1]); hold on
+        % Plot KIR
+        plot(dc_velbins(validkir), meanKIR(validkir, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
+        patch([dc_velbins(validkir)'; flipud(dc_velbins(validkir)')], ...
+            [meanKIR(validkir, c) - semKIR(validkir, c); flipud(meanKIR(validkir, c) + semKIR(validkir, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{1});
+
+        % Plot WT
+        plot(dc_velbins(validwt), meanWT(validwt, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
+        patch([dc_velbins(validwt)'; flipud(dc_velbins(validwt)')], ...
+            [meanWT(validwt, c) - semWT(validwt, c); flipud(meanWT(validwt, c) + semWT(validwt, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{2});
+
+        % Plot NA
+        plot(dc_velbins(validna), meanNA(validna, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
+        patch([dc_velbins(validna)'; flipud(dc_velbins(validna)')], ...
+            [meanNA(validna, c) - semNA(validna, c); flipud(meanNA(validna, c) + semNA(validna, c))], ...
+            'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{3});
+
         xlim(angrange); ylim(lagrange)
+        title([num2str(settings.pursuitGain(c)) 'X'])
         if c == 1
             ylabel({'Max-to-Max Time (ms)'})
         end
-        if g == 1
-            title([num2str(settings.pursuitGain(c)) 'X'])
-        end
+        xlabel({'Max Angular Velocity (deg/s)'})
     end
-end
 
-% Plot all genotypes together
-% Calculate mean and SEM across gain conditions for each genotype
-meanKIR = mean(kirMCAngBins, 3, 'omitnan');
-meanWT = mean(wtMCAngBins, 3, 'omitnan');
-meanNA = mean(naMCAngBins, 3, 'omitnan');
-semKIR = std(kirMCAngBins, 0, 3, 'omitnan') ./ sqrt(nKIR);
-semWT = std(wtMCAngBins, 0, 3, 'omitnan') ./ sqrt(nWT);
-semNA = std(naMCAngBins, 0, 3, 'omitnan') ./ sqrt(nNA);
+    % Add p-value annotation to the last plot
+    text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
 
-% Run three-way ANOVA on MCAngBins data (assuming each genotype is in the corresponding variable)
-[p, ~] = run_genotype_anova3_repeated(kirMCAngBins, wtMCAngBins, naMCAngBins, dc_velbins, 'MaxToMaxSep', folder);
+    sgtitle({'Max-to-Max Time Lag', 'Binned by Max Angular Velocity'})
+    % Save plot
+    cd(folder.summary)
+    plotname = 'max_to_max_timing_angbin';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    % Save vectorized plot
+    cd(folder.vector)
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 
-% Store p-values from ANOVA
-pval_text = {['p(gene) = ' num2str(p(1))] ['p(gain) = ' num2str(p(2))] ['p(angbin) = ' num2str(p(3))]};
-
-% Plot combined results
-for c = 1:nGain
-    validkir = sum(~isnan(kirMCAngBins(:, c, :)), 3) > nKIR / 3;
-    validwt = sum(~isnan(wtMCAngBins(:, c, :)), 3) > nWT / 3;
-    validna = sum(~isnan(naMCAngBins(:, c, :)), 3) > nNA / 3;
-
+    % Plot all genotypes together in a final tile
+    figure
     nexttile([2, 1]); hold on
+    % Calculate mean and SEM across genotypes
+    meanKIR_across = mean(meanKIR, 2, 'omitnan');
+    meanWT_across = mean(meanWT, 2, 'omitnan');
+    meanNA_across = mean(meanNA, 2, 'omitnan');
+    semKIR_across = std(meanKIR, 0, 2, 'omitnan') ./ sqrt(nKIR);
+    semWT_across = std(meanWT, 0, 2, 'omitnan') ./ sqrt(nWT);
+    semNA_across = std(meanNA, 0, 2, 'omitnan') ./ sqrt(nNA);
+
+    [p, ~] = run_genotype_anova_repeated(meanKIRDC', meanWTDC', meanNADC', 'DirectionChangePriorAcross', folder);
+
     % Plot KIR
-    plot(dc_velbins(validkir), meanKIR(validkir, c), 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
-    patch([dc_velbins(validkir)'; flipud(dc_velbins(validkir)')], ...
-          [meanKIR(validkir, c) - semKIR(validkir, c); flipud(meanKIR(validkir, c) + semKIR(validkir, c))], ...
-          'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{1});
+    plot(dc_velbins, meanKIR_across, 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
+    patch([dc_velbins'; flipud(dc_velbins')], ...
+        [meanKIR_across - semKIR_across; flipud(meanKIR_across + semKIR_across)], ...
+        'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{1});
 
     % Plot WT
-    plot(dc_velbins(validwt), meanWT(validwt, c), 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
-    patch([dc_velbins(validwt)'; flipud(dc_velbins(validwt)')], ...
-          [meanWT(validwt, c) - semWT(validwt, c); flipud(meanWT(validwt, c) + semWT(validwt, c))], ...
-          'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{2});
+    plot(dc_velbins, meanWT_across, 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
+    patch([dc_velbins'; flipud(dc_velbins')], ...
+        [meanWT_across - semWT_across; flipud(meanWT_across + semWT_across)], ...
+        'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{2});
 
     % Plot NA
-    plot(dc_velbins(validna), meanNA(validna, c), 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
-    patch([dc_velbins(validna)'; flipud(dc_velbins(validna)')], ...
-          [meanNA(validna, c) - semNA(validna, c); flipud(meanNA(validna, c) + semNA(validna, c))], ...
-          'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{3});
+    plot(dc_velbins, meanNA_across, 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
+    patch([dc_velbins'; flipud(dc_velbins')], ...
+        [meanNA_across - semNA_across; flipud(meanNA_across + semNA_across)], ...
+        'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{3});
+
+    % Add p-value annotation to the plot (top left corner)
+    text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
 
     xlim(angrange); ylim(lagrange)
-    title([num2str(settings.pursuitGain(c)) 'X'])
-    if c == 1
-        ylabel({'Max-to-Max Time (ms)'})
-    end
-    xlabel({'Max Angular Velocity (deg/s)'})
+    set(gca, 'XScale', 'log')  % Set x-axis to log scale
+    title('All Gains')
+    ylabel('Max-to-Max Time (ms)')
+    xlabel('Max Angular Velocity (deg/s)')
+
+    % Save final combined plot
+    plotname = 'max_to_max_combined';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 end
-
-% Add p-value annotation to the last plot
-text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
-
-sgtitle({'Max-to-Max Time Lag', 'Binned by Max Angular Velocity'})
-% Save plot
-cd(folder.summary)
-plotname = 'max_to_max_timing_angbin';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-% Save vectorized plot
-cd(folder.vector)
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
-
-% Plot all genotypes together in a final tile
-figure
-nexttile([2, 1]); hold on
-% Calculate mean and SEM across genotypes
-meanKIR_across = mean(meanKIR, 2, 'omitnan');
-meanWT_across = mean(meanWT, 2, 'omitnan');
-meanNA_across = mean(meanNA, 2, 'omitnan');
-semKIR_across = std(meanKIR, 0, 2, 'omitnan') ./ sqrt(nKIR);
-semWT_across = std(meanWT, 0, 2, 'omitnan') ./ sqrt(nWT);
-semNA_across = std(meanNA, 0, 2, 'omitnan') ./ sqrt(nNA);
-
-[p, ~] = run_genotype_anova_repeated(meanKIRDC', meanWTDC', meanNADC', 'DirectionChangePriorAcross', folder);
-
-% Plot KIR
-plot(dc_velbins, meanKIR_across, 'Color', settings.geneColor{1}, 'Linewidth', settings.lwAvg)
-patch([dc_velbins'; flipud(dc_velbins')], ...
-      [meanKIR_across - semKIR_across; flipud(meanKIR_across + semKIR_across)], ...
-      'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{1});
-
-% Plot WT
-plot(dc_velbins, meanWT_across, 'Color', settings.geneColor{2}, 'Linewidth', settings.lwAvg)
-patch([dc_velbins'; flipud(dc_velbins')], ...
-      [meanWT_across - semWT_across; flipud(meanWT_across + semWT_across)], ...
-      'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{2});
-
-% Plot NA
-plot(dc_velbins, meanNA_across, 'Color', settings.geneColor{3}, 'Linewidth', settings.lwAvg)
-patch([dc_velbins'; flipud(dc_velbins')], ...
-      [meanNA_across - semNA_across; flipud(meanNA_across + semNA_across)], ...
-      'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.geneColor{3});
-
-% Add p-value annotation to the plot (top left corner)
-text(0.05, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 7, 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
-
-xlim(angrange); ylim(lagrange)
-set(gca, 'XScale', 'log')  % Set x-axis to log scale
-title('All Gains')
-ylabel('Max-to-Max Time (ms)')
-xlabel('Max Angular Velocity (deg/s)')
-
-% Save final combined plot
-plotname = 'max_to_max_combined';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
 
 %% Interval between direction changes
-% Initialize figure with a tiled layout
-figure;
-tiledlayout(2, 1);  % Two rows, one column
-set(gcf,'Position',[100 100 400 900]);
+if exptFolder == 'AOTU019 KIR'
+    % Initialize figure with a tiled layout
+    figure;
+    tiledlayout(2, 1);  % Two rows, one column
+    set(gcf,'Position',[100 100 400 900]);
 
-% Call the general ANOVA function to analyze the contribution of genotype and gain to general performance
-[p_fixint, ~] = run_genotype_anova_repeated(kirFixInt, wtFixInt, naFixInt, 'IntervalFixation', folder);
-[p_notint, ~] = run_genotype_anova_repeated(kirNotInt, wtNotInt, naNotInt, 'IntervalOther', folder);
+    % Call the general ANOVA function to analyze the contribution of genotype and gain to general performance
+    [p_fixint, ~] = run_genotype_anova_repeated(kirFixInt, wtFixInt, naFixInt, 'IntervalFixation', folder);
+    [p_notint, ~] = run_genotype_anova_repeated(kirNotInt, wtNotInt, naNotInt, 'IntervalOther', folder);
 
-% Format p-value text for display
-pval_text_fixation = ['p(gene) = ' num2str(p_fixint(1)) ', p(gain) = ' num2str(p_fixint(2))];
-pval_text_nonfixation = ['p(gene) = ' num2str(p_notint(1)) ', p(gain) = ' num2str(p_notint(2))];
+    % Format p-value text for display
+    pval_text_fixation = ['p(gene) = ' num2str(p_fixint(1)) ', p(gain) = ' num2str(p_fixint(2))];
+    pval_text_nonfixation = ['p(gene) = ' num2str(p_notint(1)) ', p(gain) = ' num2str(p_notint(2))];
 
-% Get the number of gain conditions
-gainConditions = settings.pursuitGain;
+    % Get the number of gain conditions
+    gainConditions = settings.pursuitGain;
 
-% Loop for plotting fixation and non-fixation times
-for row = 1:2
-    if row == 1
-        % First row: Fixation times
-        dataKir = kirFixInt;
-        dataWt = wtFixInt;
-        dataNa = naFixInt;
-        plotTitle = 'Fixation';
-        pval_text = pval_text_fixation;
-    else
-        % Second row: Non-fixation times
-        dataKir = kirNotInt;
-        dataWt = wtNotInt;
-        dataNa = naNotInt;
-        plotTitle = 'Non-Fixation';
-        pval_text = pval_text_nonfixation;
+    % Loop for plotting fixation and non-fixation times
+    for row = 1:2
+        if row == 1
+            % First row: Fixation times
+            dataKir = kirFixInt;
+            dataWt = wtFixInt;
+            dataNa = naFixInt;
+            plotTitle = 'Fixation';
+            pval_text = pval_text_fixation;
+        else
+            % Second row: Non-fixation times
+            dataKir = kirNotInt;
+            dataWt = wtNotInt;
+            dataNa = naNotInt;
+            plotTitle = 'Non-Fixation';
+            pval_text = pval_text_nonfixation;
+        end
+
+        % Select the current tile
+        nexttile;
+        hold on;
+
+        % Plot KIR genotype
+        xVals = gainConditions - 2;  % Offset for KIR
+        color = settings.geneColor{1};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataKir, 1), 1), dataKir(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataKir(:, cond));
+            semVal = std(dataKir(:, cond)) / sqrt(size(dataKir, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Plot WT genotype
+        xVals = gainConditions;  % No offset for WT
+        color = settings.geneColor{2};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataWt, 1), 1), dataWt(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataWt(:, cond));
+            semVal = std(dataWt(:, cond)) / sqrt(size(dataWt, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Plot NA genotype
+        xVals = gainConditions + 2;  % Offset for NA
+        color = settings.geneColor{3};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataNa, 1), 1), dataNa(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataNa(:, cond));
+            semVal = std(dataNa(:, cond)) / sqrt(size(dataNa, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Set x-axis labels and limits
+        axis padded
+        ylim([150 500])
+        xticks(gainConditions);
+        xticklabels(arrayfun(@num2str, gainConditions, 'UniformOutput', false));
+        xlabel('Gain');
+        ylabel({'Median Interval'; 'Between Direction Changes (ms)'});
+
+        % Add title for each row
+        title(plotTitle);
+
+        % Add p-value annotation to the plot (top right corner)
+        text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 8, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
+
+        hold off;
     end
 
-    % Select the current tile
-    nexttile;
-    hold on;
-
-    % Plot KIR genotype
-    xVals = gainConditions - 2;  % Offset for KIR
-    color = settings.geneColor{1};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataKir, 1), 1), dataKir(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataKir(:, cond));
-        semVal = std(dataKir(:, cond)) / sqrt(size(dataKir, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Plot WT genotype
-    xVals = gainConditions;  % No offset for WT
-    color = settings.geneColor{2};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataWt, 1), 1), dataWt(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataWt(:, cond));
-        semVal = std(dataWt(:, cond)) / sqrt(size(dataWt, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Plot NA genotype
-    xVals = gainConditions + 2;  % Offset for NA
-    color = settings.geneColor{3};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataNa, 1), 1), dataNa(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataNa(:, cond));
-        semVal = std(dataNa(:, cond)) / sqrt(size(dataNa, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Set x-axis labels and limits
-    axis padded
-    ylim([150 500])
-    xticks(gainConditions);
-    xticklabels(arrayfun(@num2str, gainConditions, 'UniformOutput', false));
-    xlabel('Gain');
-    ylabel({'Median Interval'; 'Between Direction Changes (ms)'});
-
-    % Add title for each row
-    title(plotTitle);
-
-    % Add p-value annotation to the plot (top right corner)
-    text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 8, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
-    
-    hold off;
+    % Save plot
+    cd(folder.summary)
+    plotname = 'dirchange_interval';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    % Save vectorized plot
+    cd(folder.vector)
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 end
-
-% Save plot
-cd(folder.summary)
-plotname = 'dirchange_interval';
-saveas(gcf, [plotname '.png']);
-copyfile([plotname '.png'], folder.dropbox, 'f');
-% Save vectorized plot
-cd(folder.vector)
-set(gcf, 'renderer', 'Painters')
-saveas(gcf, [plotname '.svg'])
-copyfile([plotname '.svg'], folder.dropbox, 'f');
 
 %% Position of the object during direction changes
-% Initialize figure with a tiled layout
-figure;
-tiledlayout(2, 1);  % Two rows, one column
-set(gcf,'Position',[100 100 400 900]);
+if exptFolder == 'AOTU019 KIR'
+    % Initialize figure with a tiled layout
+    figure;
+    tiledlayout(2, 1);  % Two rows, one column
+    set(gcf,'Position',[100 100 400 900]);
 
-% Call the general ANOVA function to analyze the contribution of genotype and gain to object position during direction changes
-[p_fixpos, ~] = run_genotype_anova_repeated(kirFixPos, wtFixPos, naFixPos, 'PositionFixation', folder);
-[p_notpos, ~] = run_genotype_anova_repeated(kirNotPos, wtNotPos, naNotPos, 'PositionOther', folder);
+    % Call the general ANOVA function to analyze the contribution of genotype and gain to object position during direction changes
+    [p_fixpos, ~] = run_genotype_anova_repeated(kirFixPos, wtFixPos, naFixPos, 'PositionFixation', folder);
+    [p_notpos, ~] = run_genotype_anova_repeated(kirNotPos, wtNotPos, naNotPos, 'PositionOther', folder);
 
-% Format p-value text for display
-pval_text_fixation = ['p(gene) = ' num2str(p_fixpos(1)) ', p(gain) = ' num2str(p_fixpos(2))];
-pval_text_nonfixation = ['p(gene) = ' num2str(p_notpos(1)) ', p(gain) = ' num2str(p_notpos(2))];
+    % Format p-value text for display
+    pval_text_fixation = ['p(gene) = ' num2str(p_fixpos(1)) ', p(gain) = ' num2str(p_fixpos(2))];
+    pval_text_nonfixation = ['p(gene) = ' num2str(p_notpos(1)) ', p(gain) = ' num2str(p_notpos(2))];
 
-% Get the number of gain conditions
-gainConditions = settings.pursuitGain;
+    % Get the number of gain conditions
+    gainConditions = settings.pursuitGain;
 
-% Loop for plotting fixation and non-fixation object positions
-for row = 1:2
-    if row == 1
-        % First row: Fixation object positions
-        dataKir = kirFixPos;
-        dataWt = wtFixPos;
-        dataNa = naFixPos;
-        plotTitle = 'Fixation';
-        pval_text = pval_text_fixation;
-    else
-        % Second row: Non-fixation object positions
-        dataKir = kirNotPos;
-        dataWt = wtNotPos;
-        dataNa = naNotPos;
-        plotTitle = 'Non-Fixation';
-        pval_text = pval_text_nonfixation;
+    % Loop for plotting fixation and non-fixation object positions
+    for row = 1:2
+        if row == 1
+            % First row: Fixation object positions
+            dataKir = kirFixPos;
+            dataWt = wtFixPos;
+            dataNa = naFixPos;
+            plotTitle = 'Fixation';
+            pval_text = pval_text_fixation;
+        else
+            % Second row: Non-fixation object positions
+            dataKir = kirNotPos;
+            dataWt = wtNotPos;
+            dataNa = naNotPos;
+            plotTitle = 'Non-Fixation';
+            pval_text = pval_text_nonfixation;
+        end
+
+        % Select the current tile
+        nexttile;
+        hold on;
+
+        % Plot KIR genotype
+        xVals = gainConditions - 2;  % Offset for KIR
+        color = settings.geneColor{1};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataKir, 1), 1), dataKir(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataKir(:, cond));
+            semVal = std(dataKir(:, cond)) / sqrt(size(dataKir, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Plot WT genotype
+        xVals = gainConditions;  % No offset for WT
+        color = settings.geneColor{2};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataWt, 1), 1), dataWt(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataWt(:, cond));
+            semVal = std(dataWt(:, cond)) / sqrt(size(dataWt, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Plot NA genotype
+        xVals = gainConditions + 2;  % Offset for NA
+        color = settings.geneColor{3};
+        for cond = 1:length(gainConditions)
+            scatter(repmat(xVals(cond), size(dataNa, 1), 1), dataNa(:, cond), 40, settings.trialColor, '.');
+            meanVal = mean(dataNa(:, cond));
+            semVal = std(dataNa(:, cond)) / sqrt(size(dataNa, 1));
+            errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
+        end
+
+        % Set x-axis labels and limits
+        axis padded
+        ylim([0 120])
+        xticks(gainConditions);
+        xticklabels(arrayfun(@num2str, gainConditions, 'UniformOutput', false));
+        xlabel('Gain');
+        ylabel({'Median Object Position'; 'During Direction Changes (deg)'});
+
+        % Add title for each row
+        title(plotTitle);
+
+        % Add p-value annotation to the plot (top right corner)
+        text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 8, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
+
+        hold off;
     end
 
-    % Select the current tile
-    nexttile;
-    hold on;
-
-    % Plot KIR genotype
-    xVals = gainConditions - 2;  % Offset for KIR
-    color = settings.geneColor{1};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataKir, 1), 1), dataKir(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataKir(:, cond));
-        semVal = std(dataKir(:, cond)) / sqrt(size(dataKir, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Plot WT genotype
-    xVals = gainConditions;  % No offset for WT
-    color = settings.geneColor{2};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataWt, 1), 1), dataWt(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataWt(:, cond));
-        semVal = std(dataWt(:, cond)) / sqrt(size(dataWt, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Plot NA genotype
-    xVals = gainConditions + 2;  % Offset for NA
-    color = settings.geneColor{3};
-    for cond = 1:length(gainConditions)
-        scatter(repmat(xVals(cond), size(dataNa, 1), 1), dataNa(:, cond), 40, settings.trialColor, '.');
-        meanVal = mean(dataNa(:, cond));
-        semVal = std(dataNa(:, cond)) / sqrt(size(dataNa, 1));
-        errorbar(xVals(cond), meanVal, semVal, 'o', 'MarkerFaceColor', color, 'MarkerEdgeColor', color, 'Color', color, 'CapSize', 10, 'LineWidth', 1);
-    end
-
-    % Set x-axis labels and limits
-    axis padded
-    ylim([0 120])
-    xticks(gainConditions);
-    xticklabels(arrayfun(@num2str, gainConditions, 'UniformOutput', false));
-    xlabel('Gain');
-    ylabel({'Median Object Position'; 'During Direction Changes (deg)'});
-
-    % Add title for each row
-    title(plotTitle);
-
-    % Add p-value annotation to the plot (top right corner)
-    text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 8, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
-    
-    hold off;
+    % Save plot
+    cd(folder.summary)
+    plotname = 'dirchange_objectpos';
+    saveas(gcf, [plotname '.png']);
+    copyfile([plotname '.png'], folder.dropbox, 'f');
+    % Save vectorized plot
+    cd(folder.vector)
+    set(gcf, 'renderer', 'Painters')
+    saveas(gcf, [plotname '.svg'])
+    copyfile([plotname '.svg'], folder.dropbox, 'f');
 end
+
+%% Plot Jump Corrections with binned means
+% Colors (kir, wt, na)
+cols = {settings.geneColor{1}, settings.geneColor{2}, settings.geneColor{3}};
+
+% Flatten (animals × conditions cell arrays) → paired x/y vectors
+[x_kir, y_kir] = flattenJump(kirJumpAll_pos, kirJumpAll_time);
+[x_wt,  y_wt ] = flattenJump(wtJumpAll_pos,  wtJumpAll_time);
+[x_na,  y_na ] = flattenJump(naJumpAll_pos,  naJumpAll_time);
+
+X = {x_kir, x_wt, x_na};
+Y = {y_kir, y_wt, y_na};
+labels = {'Kir','WT','NA'};
+
+figure; hold on;
+
+% Scatter for each genotype
+for g = 1:3
+    scatter(X{g}, Y{g}, 20, 'Marker', '.', ...
+        'MarkerEdgeColor', cols{g});
+end
+
+% Global 10° bins
+x_all = vertcat(X{:});
+edges = 0:10:ceil(max(x_all,[],'omitnan')/10)*10;
+centers = edges(1:end-1) + diff(edges)/2;
+nb = numel(edges)-1;
+
+% Overlay binned mean ± SEM
+for g = 1:3
+    xg = X{g}; yg = Y{g};
+    m = isfinite(xg) & isfinite(yg);
+    xg = xg(m); yg = yg(m);
+
+    [~,~,bin] = histcounts(xg, edges);
+    mu = nan(1,nb); se = nan(1,nb);
+    for b = 1:nb
+        yy = yg(bin==b);
+        if ~isempty(yy)
+            mu(b) = mean(yy,'omitnan');
+            if numel(yy) > 1
+                se(b) = std(yy,0,'omitnan')/sqrt(numel(yy));
+            else
+                se(b) = 0;
+            end
+        end
+    end
+
+    keep = isfinite(mu);
+    fill([centers(keep) fliplr(centers(keep))], ...
+         [mu(keep)-se(keep) fliplr(mu(keep)+se(keep))], ...
+         'k', 'FaceAlpha',settings.semAlpha  , 'EdgeColor','none');
+    plot(centers(keep), mu(keep), 'Color', cols{g}, 'LineWidth', 2);
+end
+
+xlabel('Object displacement at jump (deg)');
+ylabel('Correction time to zero-crossing (s)');
+title('Jump size vs. correction time');
+grid on; box on;
+legend(labels, 'Location','best');
+
 
 % Save plot
 cd(folder.summary)
-plotname = 'dirchange_objectpos';
+plotname = 'jump_correction_times';
 saveas(gcf, [plotname '.png']);
 copyfile([plotname '.png'], folder.dropbox, 'f');
+
 % Save vectorized plot
 cd(folder.vector)
 set(gcf, 'renderer', 'Painters')
@@ -2715,15 +2817,20 @@ tiledlayout(2, 1);  % Two rows, one column
 set(gcf,'Position',[100 100 400 900]);
 
 % Call the general ANOVA function to analyze the contribution of genotype and gain to small and large jump corrections
-[p_smalljump, ~] = run_genotype_anova_repeated(kirJumpSmall, wtJumpSmall, naJumpSmall, 'SmallJump', folder);
-[p_largejump, ~] = run_genotype_anova_repeated(kirJumpLarge, wtJumpLarge, naJumpLarge, 'LargeJump', folder);
-
-% Format p-value text for display
-pval_text_smalljump = ['p(gene) = ' num2str(p_smalljump(1)) ', p(gain) = ' num2str(p_smalljump(2))];
-pval_text_largejump = ['p(gene) = ' num2str(p_largejump(1)) ', p(gain) = ' num2str(p_largejump(2))];
+if exptFolder == 'AOTU019 KIR'
+    [p_smalljump, ~] = run_genotype_anova_repeated(kirJumpSmall, wtJumpSmall, naJumpSmall, 'SmallJump', folder);
+    [p_largejump, ~] = run_genotype_anova_repeated(kirJumpLarge, wtJumpLarge, naJumpLarge, 'LargeJump', folder);
+    pval_text_smalljump = ['p(gene) = ' num2str(p_smalljump(1)) ', p(gain) = ' num2str(p_smalljump(2))];
+    pval_text_largejump = ['p(gene) = ' num2str(p_largejump(1)) ', p(gain) = ' num2str(p_largejump(2))];
+else
+    [p_smalljump, ~] = run_genotype_anova1(kirJumpSmall, wtJumpSmall, naJumpSmall, 'SmallJump', folder);
+    [p_largejump, ~] = run_genotype_anova1(kirJumpLarge, wtJumpLarge, naJumpLarge, 'LargeJump', folder);
+    pval_text_smalljump = ['p(gene) = ' num2str(p_smalljump(1))];
+    pval_text_largejump = ['p(gene) = ' num2str(p_largejump(1))];
+end
 
 % Get the number of gain conditions
-gainConditions = settings.pursuitGain;
+gainConditions = settings.pursuitGain(1:nGain);
 
 % Loop for plotting small and large jump corrections
 for row = 1:2
@@ -2790,13 +2897,13 @@ for row = 1:2
 
     % Add p-value annotation to the plot (top right corner)
     text(0.95, 0.95, pval_text, 'Units', 'normalized', 'FontSize', 8, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
-    
+
     hold off;
 end
 
 % Save plot
 cd(folder.summary)
-plotname = 'jump_correction_times';
+plotname = 'jump_correction_binned';
 saveas(gcf, [plotname '.png']);
 copyfile([plotname '.png'], folder.dropbox, 'f');
 
@@ -3207,7 +3314,7 @@ for g = 1:3
 
     % Plot EVT with SEM
     plot(posBins, meanEVT, 'Color', evt_color, 'LineWidth', settings.lwAvg)
-    
+
     % Plot SEM using patch
     sem_patch = patch([posBins'; flipud(posBins')], ...
         [meanEVT - semEVT; flipud(meanEVT + semEVT)], ...
@@ -3408,14 +3515,14 @@ nexttile(1); hold on
 
 % Slow (black)
 patch([bin_interp, fliplr(bin_interp)], ...
-      [mean_slow_smooth - sem_slow_smooth, fliplr(mean_slow_smooth + sem_slow_smooth)], ...
-      'k', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [mean_slow_smooth - sem_slow_smooth, fliplr(mean_slow_smooth + sem_slow_smooth)], ...
+    'k', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 plot(bin_interp, mean_slow_smooth, 'k-', 'LineWidth', 1.5);
 
 % Fast (red)
 patch([bin_interp, fliplr(bin_interp)], ...
-      [mean_fast_smooth - sem_fast_smooth, fliplr(mean_fast_smooth + sem_fast_smooth)], ...
-      'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    [mean_fast_smooth - sem_fast_smooth, fliplr(mean_fast_smooth + sem_fast_smooth)], ...
+    'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
 plot(bin_interp, mean_fast_smooth, 'r-', 'LineWidth', 1.5);
 
 xlabel('Panel Position (°)');

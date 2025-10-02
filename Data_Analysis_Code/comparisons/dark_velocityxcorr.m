@@ -161,7 +161,7 @@ title('Peak Correlation');
 ylabel('Correlation');
 xticks(1:numel(groups));
 xticklabels(groups);
-ptext = sprintf('p(Cell) = %.3f\np(Arousal) = %.3f\np(Interact) = %.3f', ...
+ptext = sprintf('p(Cell) = %.6f\np(Arousal) = %.6f\np(Interact) = %.6f', ...
     peak_stats.pValue(2), peak_stats.pValue(3), peak_stats.pValue(4));
 text(numel(groups)+0.9, 0.65, ptext, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
 
@@ -181,7 +181,7 @@ title('Lag Estimate');
 ylabel('Lag (ms)');
 xticks(1:numel(groups));
 xticklabels(groups);
-ptext = sprintf('p(Cell) = %.3f\np(Arousal) = %.3f\np(Interact) = %.3f', ...
+ptext = sprintf('p(Cell) = %.6f\np(Arousal) = %.6f\np(Interact) = %.6f', ...
     lag_stats.pValue(2), lag_stats.pValue(3), lag_stats.pValue(4));
 text(numel(groups)+0.9, 400, ptext, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
 
@@ -189,33 +189,163 @@ cd(plotPath)
 saveas(gcf, 'xcorr_darkness_combined.png');
 saveas(gcf, 'xcorr_darkness_combined.svg');
 
-%% Posthoc
-% Get coefficient names
-disp(lme_peak.CoefficientNames);
+%% Post hoc: paired t-tests (effect of arousal within each cell type) for PEAK CORR
+% Bonferroni across two tests (AOTU019 and AOTU025)
+alpha_raw  = 0.05;
+alpha_bonf = alpha_raw / 2;
 
-% Contrast vector: +P1 vs -P1 across both cell types
-% This assumes the arousal effect is in 'Arousal_+P1'
-C_arousal = zeros(1, length(lme_peak.CoefficientNames));
-C_arousal(strcmp(lme_peak.CoefficientNames, 'Arousal_+P1')) = 1;
+% --- Collapse to a per-fly vector (if matrix, average across columns) ---
+x019_no = AOTU019_r_pk_ang_nop1(:);
+x019_p1 = AOTU019_r_pk_ang_p1(:);
+x025_no = AOTU025_r_pk_ang_nop1(:);
+x025_p1 = AOTU025_r_pk_ang_p1(:);
 
-[p_arousal, Fval, df1, df2] = coefTest(lme_peak, C_arousal);
-fprintf('Post hoc: +P1 vs -P1 (Peak Correlation): p = %.4e\n', p_arousal);
+% Pairwise non-NaN masks to keep matched pairs only
+m019 = ~isnan(x019_no) & ~isnan(x019_p1);
+m025 = ~isnan(x025_no) & ~isnan(x025_p1);
 
-% Get coefficient names
-disp(lme_lag.CoefficientNames);
+% --- AOTU019 paired t-test (+P1 vs −P1) ---
+[~, p019_raw, ci019, stats019] = ttest(x019_p1(m019), x019_no(m019), 'Alpha', alpha_bonf);
+p019_bonf = min(p019_raw*2, 1);  % Bonferroni adjust for 2 tests
+d019 = x019_p1(m019) - x019_no(m019);
+dz019 = mean(d019,'omitnan') / std(d019,'omitnan');  % Cohen's dz for paired
 
-% Contrast vector: AOTU025 vs AOTU019
-% This assumes the cell type effect is in 'Cell_AOTU025'
-C_cell = zeros(1, length(lme_lag.CoefficientNames));
-C_cell(strcmp(lme_lag.CoefficientNames, 'Cell_AOTU025')) = 1;
+% --- AOTU025 paired t-test (+P1 vs −P1) ---
+[~, p025_raw, ci025, stats025] = ttest(x025_p1(m025), x025_no(m025), 'Alpha', alpha_bonf);
+p025_bonf = min(p025_raw*2, 1);  % Bonferroni adjust
+d025 = x025_p1(m025) - x025_no(m025);
+dz025 = mean(d025,'omitnan') / std(d025,'omitnan');
 
-[p_cell, Fval, df1, df2] = coefTest(lme_lag, C_cell);
-fprintf('Post hoc: AOTU025 vs AOTU019 (Lag): p = %.4f\n', p_cell);
+% Print concise results
+fprintf('AOTU019 (+P1 vs -P1): t(%d)=%.3f, p_raw=%.4g, p_bonf=%.4g, dz=%.3f, CI[%.3f %.3f], n=%d\n', ...
+    stats019.df, stats019.tstat, p019_raw, p019_bonf, dz019, ci019(1), ci019(2), sum(m019));
 
-%% Display number of valid flies per cell type
-valid_019_ids = unique(fly_id_peak(strcmp(cell_type_peak, "AOTU019")));
-valid_025_ids = unique(fly_id_peak(strcmp(cell_type_peak, "AOTU025")));
+fprintf('AOTU025 (+P1 vs -P1): t(%d)=%.3f, p_raw=%.4g, p_bonf=%.4g, dz=%.3f, CI[%.3f %.3f], n=%d\n', ...
+    stats025.df, stats025.tstat, p025_raw, p025_bonf, dz025, ci025(1), ci025(2), sum(m025));
 
-fprintf('Number of valid flies:\n');
-fprintf('  AOTU019: %d\n', numel(valid_019_ids));
-fprintf('  AOTU025: %d\n', numel(valid_025_ids));
+%% Optional confirmatory check: per-fly means, Welch t-test (AOTU019 vs AOTU025)
+
+% Collapse each fly to its mean across arousal
+% AOTU019
+lag019_no = AOTU019_lag_pk_ang_nop1;  % [flies x trials] or [flies x 1]
+lag019_p1 = AOTU019_lag_pk_ang_p1;
+m019 = mean([lag019_no, lag019_p1], 2, 'omitnan');  % per-fly mean across arousal
+
+% AOTU025
+lag025_no = AOTU025_lag_pk_ang_nop1;
+lag025_p1 = AOTU025_lag_pk_ang_p1;
+m025 = mean([lag025_no, lag025_p1], 2, 'omitnan');
+
+% Remove NaNs
+m019 = m019(~isnan(m019));
+m025 = m025(~isnan(m025));
+
+% Welch two-sample t-test
+[~, p_welch, ~, stats_w] = ttest2(m025, m019, 'Vartype','unequal');
+
+% Hedges' g for unequal n, unbiased
+s019 = var(m019, 'omitnan'); s025 = var(m025, 'omitnan');
+n019 = numel(m019);          n025 = numel(m025);
+sp   = sqrt(((n019-1)*s019 + (n025-1)*s025) / (n019 + n025 - 2));
+g    = (mean(m025)-mean(m019)) / sp;
+J    = 1 - (3/(4*(n019+n025)-9));  % small-sample correction
+g_unbiased = g * J;
+
+fprintf('Welch t-test on per-fly mean lag (AOTU025 - AOTU019): t(%0.1f)=%.3f, p=%.4g, g=%.3f\n', ...
+    stats_w.df, stats_w.tstat, p_welch, g_unbiased);
+
+%% XCORR (dark): Paired no P1 vs +P1 per fly — r and lag (filter lag>0)
+close all
+
+% Colors
+blue   = [0 0.35 0.90];
+purple = [0.55 0 0.65];
+
+% Axis ranges
+r_range   = [-0.05 0.65];
+lag_range = [-400 0];
+
+figure; set(gcf,'Position',[100 100 900 900])
+tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
+
+% ---------------- AOTU019 ----------------
+% Filter (valid + lag<=0 both conditions)
+noP1_r = AOTU019_r_pk_ang_nop1(:);
+p1_r   = AOTU019_r_pk_ang_p1(:);
+noP1_l = AOTU019_lag_pk_ang_nop1(:);
+p1_l   = AOTU019_lag_pk_ang_p1(:);
+valid019 = isfinite(noP1_r) & isfinite(p1_r) & ...
+           isfinite(noP1_l) & isfinite(p1_l) & ...
+           (noP1_l <= 0) & (p1_l <= 0);
+noP1_r = noP1_r(valid019); p1_r = p1_r(valid019);
+noP1_l = noP1_l(valid019); p1_l = p1_l(valid019);
+
+% r panel
+ax = nexttile; hold on
+for k = 1:numel(noP1_r)
+    plot([1 2],[noP1_r(k) p1_r(k)],'.-','Color',[0 0 0],'MarkerSize',10);
+end
+plot(1,median(noP1_r,'omitnan'),'_','Color',blue,'MarkerSize',16,'LineWidth',1.8);
+plot(2,median(p1_r,'omitnan'),'_','Color',blue,'MarkerSize',16,'LineWidth',1.8);
+xlim([0.7 2.3]); ylim(r_range); yline(0,'-');
+xticks([1 2]); xticklabels({'-P1','+P1'});
+ylabel('Peak correlation (r)'); title('AOTU019'); box off
+
+% lag panel
+ax = nexttile; hold on
+for k = 1:numel(noP1_l)
+    plot([1 2],[noP1_l(k) p1_l(k)],'.-','Color',[0 0 0],'MarkerSize',10);
+end
+plot(1,median(noP1_l,'omitnan'),'_','Color',blue,'MarkerSize',16,'LineWidth',1.8);
+plot(2,median(p1_l,'omitnan'),'_','Color',blue,'MarkerSize',16,'LineWidth',1.8);
+xlim([0.7 2.3]); ylim(lag_range); yline(0,'-');
+xticks([1 2]); xticklabels({'-P1','+P1'});
+ylabel('Lag (ms)'); title('AOTU019'); box off
+
+% ---------------- AOTU025 ----------------
+noP1_r = AOTU025_r_pk_ang_nop1(:);
+p1_r   = AOTU025_r_pk_ang_p1(:);
+noP1_l = AOTU025_lag_pk_ang_nop1(:);
+p1_l   = AOTU025_lag_pk_ang_p1(:);
+valid025 = isfinite(noP1_r) & isfinite(p1_r) & ...
+           isfinite(noP1_l) & isfinite(p1_l) & ...
+           (noP1_l <= 0) & (p1_l <= 0);
+noP1_r = noP1_r(valid025); p1_r = p1_r(valid025);
+noP1_l = noP1_l(valid025); p1_l = p1_l(valid025);
+
+% r panel
+ax = nexttile; hold on
+for k = 1:numel(noP1_r)
+    plot([1 2],[noP1_r(k) p1_r(k)],'.-','Color',[0 0 0],'MarkerSize',10);
+end
+plot(1,median(noP1_r,'omitnan'),'_','Color',purple,'MarkerSize',16,'LineWidth',1.8);
+plot(2,median(p1_r,'omitnan'),'_','Color',purple,'MarkerSize',16,'LineWidth',1.8);
+xlim([0.7 2.3]); ylim(r_range); yline(0,'-');
+xticks([1 2]); xticklabels({'-P1','+P1'});
+ylabel('Peak correlation (r)'); title('AOTU025'); box off
+
+% lag panel
+ax = nexttile; hold on
+for k = 1:numel(noP1_l)
+    plot([1 2],[noP1_l(k) p1_l(k)],'.-','Color',[0 0 0],'MarkerSize',10);
+end
+plot(1,median(noP1_l,'omitnan'),'_','Color',purple,'MarkerSize',16,'LineWidth',1.8);
+plot(2,median(p1_l,'omitnan'),'_','Color',purple,'MarkerSize',16,'LineWidth',1.8);
+xlim([0.7 2.3]); ylim(lag_range); yline(0,'-');
+xticks([1 2]); xticklabels({'-P1','+P1'});
+ylabel('Lag (ms)'); title('AOTU025'); box off
+
+sgtitle('XCORR (dark): Paired no P1 vs +P1 per fly (lag>0 excluded)','FontWeight','bold');
+
+% Save (if plotPath exists)
+if exist('plotPath','var') && isfolder(plotPath)
+    cd(plotPath)
+    saveas(gcf, 'xcorr_darkness_paired_filtered.png');
+    set(gcf, 'renderer', 'Painters');
+    saveas(gcf, 'xcorr_darkness_paired_filtered.svg');
+end
+
+% ---------------- Display valid flies ----------------
+fprintf('Valid flies included (lag <= 0 in both conditions):\n');
+fprintf('  AOTU019: %d\n', sum(valid019));
+fprintf('  AOTU025: %d\n', sum(valid025));

@@ -3,7 +3,7 @@
 % AOTU025 data and performs comparisons across all and quiescent-only 
 % timepoints, running t-tests to check significance between the two cell types.
 %
-% CREATED: 11/09/2024 - MC
+% CREATED: 09/03/2025 - MC adapted from p1 analysis
 
 % Load AOTU019 and AOTU025 spike and voltage difference data
 clear; close all
@@ -12,14 +12,18 @@ dataPath = 'E:\Compare Motion Pulse\data';  % Define folder containing the .mat 
 cd(dataPath);
 
 % Load spike and voltage difference data for AOTU019 and AOTU025
-AOTU019_data = load(fullfile(dataPath, 'AOTU019_Background_P1_spike_voltage_diffs.mat'));
-AOTU025_data = load(fullfile(dataPath, 'AOTU025_Background_P1_spike_voltage_diffs.mat'));
+AOTU019_data = load(fullfile(dataPath, 'AOTU019_Background_aIPg_spike_voltage_diffs.mat'));
+AOTU025_data = load(fullfile(dataPath, 'AOTU025_Background_aIPg_spike_voltage_diffs.mat'));
 
 % Access difference data
 AOTU019_diff_sr = AOTU019_data.diff_sr;
 AOTU019_diff_vm = AOTU019_data.diff_vm;
 AOTU025_diff_sr = AOTU025_data.diff_sr;
 AOTU025_diff_vm = AOTU025_data.diff_vm;
+
+% Fetch n
+n019 = size(AOTU019_diff_sr,1);
+n025 = size(AOTU025_diff_sr,1);
 
 %% Plot
 % Create tiled layout for plotting
@@ -101,19 +105,19 @@ ylim(vm_range); % Set y-axis limits for voltage difference
 text(0.5, -1.2, sprintf('p = %.5e', p_vm_quiet), 'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom', 'FontSize', text_size);
 
 % Add main title
-sgtitle('Difference Comparison');
+sgtitle(['Dark Compare (n = ' num2str(n019) ',' num2str(n025) ')']);
 % Save plots as images
 cd(plotPath)
-saveas(gcf, 'p1_compare_darkness.png');
+saveas(gcf, 'aipg_compare_darkness.png');
 set(gcf, 'renderer', 'Painters'); % Save vectorized version
-saveas(gcf, 'p1_compare_darkness.svg');
+saveas(gcf, 'aipg_compare_darkness.svg');
 
 
 %% Percent Time Running – Arousal x Cell Type ANOVA
 % Load percent run time data
 cd(dataPath);
-data019 = load('AOTU019_Background_P1_runpercent_data.mat');
-data025 = load('AOTU025_Background_P1_runpercent_data.mat');
+data019 = load('AOTU019_Background_aIPg_runpercent_data.mat');
+data025 = load('AOTU025_Background_aIPg_runpercent_data.mat');
 
 run019_off = data019.runpercent_off(:);
 run019_on  = data019.runpercent_on(:);
@@ -134,7 +138,7 @@ T = table(run_all, celltype, arousal, 'VariableNames', {'RunTime', 'CellType', '
 [p, tbl, stats] = anovan(T.RunTime, {T.CellType, T.Arousal}, ...
     'model', 2, 'varnames', {'Cell Type', 'Arousal'}, 'display', 'off');
 
-%% Plot run time with arousal state and cell type
+% Plot run time with arousal state and cell type
 figure; set(gcf, 'Position', [100 100 300 800]);
 tiledlayout(2,1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -201,7 +205,7 @@ xlim([0.5 2.5]);
 ylim([0 70]);
 xticks([1 2]);
 xticklabels({'AOTU019', 'AOTU025'});
-ylabel('\Delta % Time Running (P1 on - off)');
+ylabel('\Delta % Time Running (aIPg on - off)');
 title('Change in Run Time with Arousal');
 yl = ylim;
 xl = xlim;
@@ -211,6 +215,6 @@ text(xl(2) - 0.05, yl(2) - 1, sprintf('p = %.3g', p_delta), ...
 
 % Save plot
 cd(plotPath);
-saveas(gcf, 'p1_run_arousal_celltype.png');
+saveas(gcf, 'aipg_run_arousal_celltype.png');
 set(gcf, 'renderer', 'Painters');
-saveas(gcf, 'p1_run_arousal_celltype.svg');
+saveas(gcf, 'aipg_run_arousal_celltype.svg');

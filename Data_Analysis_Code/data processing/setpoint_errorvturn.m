@@ -48,7 +48,7 @@ end
 
 % initialize
 posBinnedAngular = nan(nPosBins,nCond);
-minBin = 500;
+minBin = 250;
 nBin = [];
 
 % for each condition
@@ -62,21 +62,19 @@ for c = 1:nCond
     thisAngular = reshape(angular(:,:,c),[],1);
 
     % discretize panel data
-    discPanelps = discretize(thisPanelps,posEdge,posBins);
+    binIdx = discretize(thisPanelps, posEdge);
 
     % calculate mean for each position bin
     for p = 1:nPosBins
-        thisBin = posBins(p);
-        thisBinIdx = find(discPanelps==thisBin);
-        nBin(x,c) = length(thisBinIdx);
-        x=x+1;
-        % only include the bin if it has at least 3 points
-        if length(thisBinIdx) >= minBin
-            posBinnedAngular(p,c) = mean(thisAngular(thisBinIdx),'omitnan');
+        thisBinIdx = (binIdx == p);
+        nBin(p,c) = sum(thisBinIdx);
+        if nBin(p,c) >= minBin
+            posBinnedAngular(p,c) = mean(thisAngular(thisBinIdx), 'omitnan');
         else
-            posBinnedAngular(p,c) = NaN; % exclude bin with fewer than 3 points
+            posBinnedAngular(p,c) = NaN;
         end
     end
+
 end
 
 % no combine

@@ -1,9 +1,8 @@
-% mp_p1difference.m
-% CREATED: 11/18/2024 - MC
-% UPDATED: 09/09/2025 - MC
+% mp_aipgdifference.m
+% CREATED: 09/09/2025 - MC
 
 % This script compares the firing rate responses of AOTU019 and AOTU025 
-% neurons during P1 activation versus no P1 activation.
+% neurons during aIPg activation versus no aIPg activation.
 
 %% Initialize
 clear
@@ -18,10 +17,10 @@ dataPath = 'E:\Compare Motion Pulse\data';
 cd(dataPath)
 
 % Define file names
-AOTU019_P1_file = fullfile(dataPath, 'AOTU019_Motion_Pulse_sweeppeaks_25_dps_Quiescent.mat');
-AOTU019_noP1_file = fullfile(dataPath, 'AOTU019_Motion_Pulse_No_P1_sweeppeaks_25_dps_Quiescent.mat');
-AOTU025_P1_file = fullfile(dataPath, 'AOTU025_Motion_Pulse_sweeppeaks_25_dps_Quiescent.mat');
-AOTU025_noP1_file = fullfile(dataPath, 'AOTU025_Motion_Pulse_No_P1_sweeppeaks_25_dps_Quiescent.mat');
+AOTU019_P1_file = fullfile(dataPath, 'AOTU019_aIPg_Motion_Pulse_sweeppeaks_25_dps_Quiescent.mat');
+AOTU019_noP1_file = fullfile(dataPath, 'AOTU019_aIPg_Motion_Pulse_No_P1_sweeppeaks_25_dps_Quiescent.mat');
+AOTU025_P1_file = fullfile(dataPath, 'AOTU025_aIPg_Motion_Pulse_sweeppeaks_25_dps_Quiescent.mat');
+AOTU025_noP1_file = fullfile(dataPath, 'AOTU025_aIPg_Motion_Pulse_No_P1_sweeppeaks_25_dps_Quiescent.mat');
 
 % Load each file
 AOTU019_P1_data = load(AOTU019_P1_file);
@@ -119,6 +118,10 @@ end
 AOTU019_median_diff = median(AOTU019_diff_avg, 'omitnan');
 AOTU025_median_diff = median(AOTU025_diff_avg, 'omitnan');
 
+% Fetch n
+n019 = size(AOTU019_diff_avg,1);
+n025 = size(AOTU025_diff_avg,1);
+
 %% Plot Average Differences
 % Initialize plot
 figure; set(gcf,'Position',[100 100 200 600])
@@ -142,18 +145,18 @@ plot(2, AOTU025_median_diff, '_', 'Color', purple, 'MarkerSize', 12);
 % Formatting
 xlim([0.5, 2.5]);
 xticks([1, 2]);
-ylim([-5 40])
 xticklabels({'AOTU019', 'AOTU025'});
-ylabel('Avg Difference in Firing Rate (P1 - no P1)');
+ylabel('Avg Difference in Firing Rate (aIPg - no aIPg)');
 
 % Display the p-value on the plot
 text(2.5, max([AOTU019_diff_avg; AOTU025_diff_avg]+3), sprintf('p = %.5f', p), 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', 'FontSize', 8);
 
 % Save
+sgtitle(['MP Compare (n = ' num2str(n019) ',' num2str(n025) ')']);
 cd(plotPath)
-saveas(gcf, 'p1_compare_visual_diff.png');
+saveas(gcf, 'aipg_compare_visual_diff.png');
 set(gcf, 'renderer', 'Painters'); % Save vectorized version
-saveas(gcf, 'p1_compare_visual_diff.svg');
+saveas(gcf, 'aipg_compare_visual_diff.svg');
 
 %% Plot Average before and after P1 stimulation
 
@@ -210,7 +213,7 @@ end
 plot(1,median(no019,'omitnan'),'_','Color',blue,'MarkerSize',14,'LineWidth',1.5);
 plot(2,median(p1019,'omitnan'),'_','Color',blue,'MarkerSize',14,'LineWidth',1.5);
 % Formatting
-xlim([0.7 2.3]); xticks([1 2]); xticklabels({'no P1','P1'}); ylim(fr_range); yline(0)
+xlim([0.7 2.3]); xticks([1 2]); xticklabels({'no aIPg','aIPg'}); ylim(fr_range); yline(0)
 ylabel('Mean firing rate'); title('AOTU019'); box off
 
 % AOTU025
@@ -221,7 +224,7 @@ end
 plot(1,median(no025,'omitnan'),'_','Color',purple,'MarkerSize',14,'LineWidth',1.5);
 plot(2,median(p1025,'omitnan'),'_','Color',purple,'MarkerSize',14,'LineWidth',1.5);
 % Formatting
-xlim([0.7 2.3]); xticks([1 2]); xticklabels({'no P1','P1'}); ylim(fr_range); yline(0)
+xlim([0.7 2.3]); xticks([1 2]); xticklabels({'no aIPg','aIPg'}); ylim(fr_range); yline(0)
 ylabel('Mean R-L firing rate'); title('AOTU025'); box off
 
 
@@ -242,13 +245,14 @@ stats = anova(mdl,'DFMethod','Satterthwaite');
 disp(stats)
 
 % Display the p-value on the plot
-text(2, fr_range(2)-1, sprintf('p(cell) = %.5f\np(P1) = %.5f\np(x) = %.5f', stats.pValue(2), stats.pValue(3), stats.pValue(4)), 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', 'FontSize', 8);
+text(2, fr_range(2)-1, sprintf('p(cell) = %.5f\np(aIPg) = %.5f\np(x) = %.5f', stats.pValue(2), stats.pValue(3), stats.pValue(4)), 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', 'FontSize', 8);
 
 % Save
+sgtitle(['MP Compare (n = ' num2str(n019) ',' num2str(n025) ')']);
 cd(plotPath)
-saveas(gcf, 'p1_compare_visual_raw.png');
+saveas(gcf, 'aipg_compare_visual_raw.png');
 set(gcf, 'renderer', 'Painters');
-saveas(gcf, 'p1_compare_visual_raw.svg');
+saveas(gcf, 'aipg_compare_visual_raw.svg');
 
 %% Posthoc: paired t-tests within each cell type (Bonferroni across 2 tests)
 alpha = 0.05;

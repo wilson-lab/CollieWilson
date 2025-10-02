@@ -109,7 +109,7 @@ function fixation = fixationFinder(panelps, forward, expttime, optPlot)
     if optPlot
         % initialize
         figure; set(gcf, 'Position', [50 50 4000 900])
-        tiledlayout(5, 5, 'TileSpacing', 'tight')
+        tiledlayout(nCond, nTrial, 'TileSpacing', 'tight')
         x = 1;
         if timeFixating > settings.minFixationTime
             fixcolor = "#77AC30";
@@ -117,11 +117,14 @@ function fixation = fixationFinder(panelps, forward, expttime, optPlot)
             fixcolor = "#A2142F";
         end
         % Fixation Indices Plot
-        for c = 1:5
+        for c = 1:nCond
             % estimate HD bias
             biasHD = mean(panelps_fix_r(:,:,c), 'all', 'omitnan');
+            if isnan(biasHD)
+                biasHD=0;
+            end
 
-            for t = 1:5
+            for t = 1:nTrial
                 nexttile; hold on
 
                 % Subtract biasHD and wrap to -180 to 180

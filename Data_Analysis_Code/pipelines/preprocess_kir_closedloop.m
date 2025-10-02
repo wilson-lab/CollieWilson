@@ -37,19 +37,24 @@ allFiles(contains(string({allFiles.name}), 'Acclimate')) = [];
 nTrial = length(allFiles);
 % pull expt meta
 load('metaDat.mat')
-filebase = [condition '_' strrep(char(extractBetween(char(thisFly{1}),'Gain\','_processed')),'\','_')];
+filebase = [condition '_' strrep(char(extractBetween(char(thisFly{1}),'Pursuit\','_processed')),'\','_')];
 
 % load processing settings
 settings = processSettings();
-nGain = length(settings.pursuitGain); % fetch number of gain settings
+if exptFolder == 'AOTU025 KIR'
+    nGain = 1;
+else
+    nGain = length(settings.pursuitGain); % fetch number of gain settings
+end
+
 newSR = 30; %new sample rate (must be shorter than shortest pixel dwell time)
 
 %% load in dataset if not already processed previously
 
 % if the interpolated data set already exists, load in
 if exist([folder.int '\' filebase '_int.mat'],'file')
-    disp('Loading in existing dataset.')
-    load([folder.int '\' filebase '_int.mat'])
+    disp('Data already pre-processed.')
+    %load([folder.int '\' filebase '_int.mat'])
     %else data does not exist so load, downsample, and save
 else
     disp('Loading in dataset...')
@@ -130,32 +135,32 @@ else
     save([filebase '_int.mat'], 'int_forward','int_angular','int_sideway','int_panelps','int_panelvel','int_jumptrg','int_time','-v7.3');
 
     disp('Dataset processed and saved.')
-end
 
-%% plot fixation performance
-thisFixation = fixationFinder(int_panelps,int_forward,int_time,1);
-fix_panelps = thisFixation.panelps_run;
-fix_angular = int_angular;
-fix_angular(~thisFixation.idx_run) = nan;
+    %% plot fixation performance
+    thisFixation = fixationFinder(int_panelps,int_forward,int_time,1);
+    fix_panelps = thisFixation.panelps_run;
+    fix_angular = int_angular;
+    fix_angular(~thisFixation.idx_run) = nan;
 
-thisFixationT = reshape(sum(int_time(sum(~isnan(fix_panelps))+1)),1,nGain); %time spent fixating, s
+    thisFixationT = reshape(sum(int_time(sum(~isnan(fix_panelps))+1)),1,nGain); %time spent fixating, s
 
-% save plot
-cd(folder.plot)
-plotname = ['fixation_' filebase];
-saveas(gcf,[plotname '.png']);
-
-disp('Complete.')
-
-%% plot direction change performance
-if all(thisFixationT>settings.minFixationTime)
-    [~, ~, ~, ~] = setpoint_dirchange(fix_panelps, fix_angular, int_jumptrg, int_time, 1);
-    sgtitle(strrep(filebase,'_',' '))
     % save plot
     cd(folder.plot)
-    plotname = ['dirchange_' filebase];
+    plotname = ['fixation_' filebase];
     saveas(gcf,[plotname '.png']);
+
+    disp('Complete.')
 end
+
+%% plot direction change performance
+% if all(thisFixationT>settings.minFixationTime)
+%     [~, ~, ~, ~] = setpoint_dirchange(fix_panelps, fix_angular, int_jumptrg, int_time, 1);
+%     sgtitle(strrep(filebase,'_',' '))
+%     % save plot
+%     cd(folder.plot)
+%     plotname = ['dirchange_' filebase];
+%     saveas(gcf,[plotname '.png']);
+% end
 
 %% plot peak change performance
 % if all(thisFixationT>settings.minFixationTime)

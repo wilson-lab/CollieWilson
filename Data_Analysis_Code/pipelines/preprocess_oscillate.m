@@ -17,6 +17,7 @@
 %
 % 02/03/2023 - MC created from visual pursuit pipeline
 % 07/08/2024 - MC cleaned and simplified
+% 07/07/2025 - MC adjusted for broader use
 %
 function preprocess_oscillate(exptFolder,thisFly,trialTypes,trackLR)
 %% initialize
@@ -54,16 +55,9 @@ if ~exist(dropboxFolder, 'dir')
     mkdir(dropboxFolder)
 end
 
-% plotting
-srlimit = 20;
-
-% min time spent running
-minTimeSpentRunning = 10; %sec
-
-% trial types denoted via lettering
-nSpeeds = length(trialTypes);
+% prepare settings
+nCond = length(trialTypes);
 letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
 [~, ~, settings] = ephysSettings();
 
 
@@ -95,7 +89,7 @@ else
         thisTrial = allFiles(e).name;
         % pull this trial info
         thisN = str2double(thisTrial(30:31)); %pull trial number
-        if nSpeeds>1
+        if nCond>1
             thisA = find(ismember(letters,thisTrial)); %pull trial type based on letter denoted
         else
             thisA = 1;
@@ -130,7 +124,7 @@ else
 
     % center panel data at zero
     % for each trial type
-    for tt = 1:nSpeeds
+    for tt = 1:nCond
         thisMidpoint = min(allPanelPs(1e3:end,1,tt)) + (max(allPanelPs(1e3:end,1,tt))-min(allPanelPs(1e3:end,1,tt)))/2;
         allPanelPs_c(:,:,tt) = allPanelPs(:,:,tt)-thisMidpoint;
     end

@@ -50,7 +50,7 @@ if optLag
     varOut(end-idx_vm+1:end,:) = nan; %exclude shifts
 end
 
-%% pull output variable for each repeated sweep sweep
+%% pull output variable for each repeated sweep
 
 % for each trial
 c = 1; %counter
@@ -58,7 +58,16 @@ for nt = 1:nTrials
     thisPanelps = panelps_r(:,nt);
     thisVarOut = varOut(:,nt);
     % find where the oscillating sweep crosses the midline (0)
-    crossIdx = find(thisPanelps==0);
+    % Define a noise-tolerant threshold (e.g., 2 degrees)
+    crossThresh = 2;
+
+    % Create logicals for left vs. right with margin
+    isLeft  = thisPanelps < -crossThresh;
+    isRight = thisPanelps >  crossThresh;
+
+    % Detect crossings: left → right or right → left
+    crossIdx = find(diff(isLeft) == -1 | diff(isRight) == -1) + 1;
+
     % check this trial is valid before fetching data
     if ~isempty(crossIdx)
         % check no crosses have been indexed repeatedly by mistake
@@ -84,14 +93,25 @@ for nt = 1:nTrials
         end
         % for each sweep, pull and store data
         for ns = 1:nSweeps
-            dIdx = ns + is; %data index
-            % store panel data
-            sweepPos_single(:,ns,c) = thisPanelps(sweepIdx(ns):sweepIdx(ns)+sweepDur-1);
-            % store output data
-            varBinned(1:sweepDur,dIdx) = thisVarOut(sweepIdx(ns):sweepIdx(ns)+sweepDur-1);
-            % store index
-            runBinned(1:sweepDur,dIdx) = runIdx(sweepIdx(ns):sweepIdx(ns)+sweepDur-1,c);
+            dIdx = ns + is; % data index
+
+            sweepStart = sweepIdx(ns);
+            sweepEnd = sweepStart + sweepDur - 1;
+
+            % Check that sweep fits within trial bounds
+            if sweepEnd <= length(thisVarOut)
+                % store panel data
+                sweepPos_single(:,ns,c) = thisPanelps(sweepStart:sweepEnd);
+                % store output data
+                varBinned(1:sweepDur,dIdx) = thisVarOut(sweepStart:sweepEnd);
+                % store index
+                runBinned(1:sweepDur,dIdx) = runIdx(sweepStart:sweepEnd,c);
+            else
+                % Skip this sweep if not enough data remains
+                continue
+            end
         end
+
         is = is+nSweeps; %update sweep index
         c = c+1; %update counter
     end

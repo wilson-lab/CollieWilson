@@ -102,7 +102,7 @@ for s = 1:2
         stars = '*';
     end
 
-    fprintf('  Speed %s: p = %.4f %s\n', this_speed, pval, stars);
+    fprintf('  Speed %s: p = %.5f %s\n', this_speed, pval, stars);
 end
 
 
@@ -136,11 +136,11 @@ end
 
     % Add p-values to last tile of the row
     axes_handle = gca;
-    text(axes_handle, 2.5, 1, sprintf('p(celltype): %.3f', p_celltype), ...
+    text(axes_handle, 2.5, 1, sprintf('p(celltype): %.5f', p_celltype), ...
          'FontSize', 8, 'HorizontalAlignment', 'right');
-    text(axes_handle, 2.5, 0.9, sprintf('p(speed): %.3f', p_speed), ...
+    text(axes_handle, 2.5, 0.9, sprintf('p(speed): %.5f', p_speed), ...
          'FontSize', 8, 'HorizontalAlignment', 'right');
-    text(axes_handle, 2.5, 0.8, sprintf('p(interaction): %.3f', p_interaction), ...
+    text(axes_handle, 2.5, 0.8, sprintf('p(interaction): %.5f', p_interaction), ...
          'FontSize', 8, 'HorizontalAlignment', 'right');
 end
 

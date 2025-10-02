@@ -11,8 +11,8 @@
 % trialTypes - trial types denoted by motion speed
 % trackLR    - which side for AOTU019 w/ 1=L and 2=R
 %
-% The function processes, downsample, and analyzes data. It accounts for 
-% side normalization, performs liquid junction potential corrections, and 
+% The function processes, downsample, and analyzes data. It accounts for
+% side normalization, performs liquid junction potential corrections, and
 % generates heatmaps of spike rate vs. directional velocity.
 %
 % 05/01/2023 - MC created from single battery pipeline
@@ -70,12 +70,7 @@ ljPotential = 13; %mV
 %% load in dataset if not already processed previously
 % if the interpolated data set already exists, load in
 if exist([intFolder '\' filebase '_int.mat'],'file')
-    disp('Data alreaded preprocessed, loading in...')
-    cd(intFolder)
-    load([filebase '_int.mat'])
-    ephysCheck = exist('int_spikert');
-    disp('Complete.')
-
+    disp('Data alreaded preprocessed.')
     %else data does not exist so load, downsample, and save
 else
     disp('Loading in dataset by trial type...')
@@ -175,42 +170,42 @@ else
     end
 
     disp('Dataset processed and saved.')
+
+    %% plot spikerate vs directional velocity
+    disp('Generating heatmap...')
+
+    % without lag
+    [~] = spikert_heatmapvelocity(int_forward,int_angular,int_sideway,int_spikert,int_time,0,1);
+    sgtitle(strrep(filebase,'_','/'))
+    % save plot
+    cd(plotFolder)
+    plotname = ['spikert_v_vel_heat_' filebase '.png'];
+    saveas(gcf,plotname);
+    copyfile(plotname, dropboxFolder,'f');
+    % save vectorized plot
+    cd(vectorFolder)
+    plotname = ['spikert_v_vel_heat_' filebase '.svg'];
+    set(gcf,'renderer','Painters')
+    saveas(gcf, plotname)
+    copyfile(plotname, dropboxFolder,'f');
+
+    % with lag
+    [~] = spikert_heatmapvelocity(int_forward,int_angular,int_sideway,int_spikert,int_time,1,1);
+    sgtitle([strrep(filebase,'_','/') ' w/lag'])
+    % save plot
+    cd(plotFolder)
+    plotname = ['spikert_v_vel_heatlag_' filebase '.png'];
+    saveas(gcf,plotname);
+    copyfile(plotname, dropboxFolder,'f');
+    % save vectorized plot
+    cd(vectorFolder)
+    plotname = ['spikert_v_vel_heat_' filebase '.svg'];
+    set(gcf,'renderer','Painters')
+    saveas(gcf, plotname)
+    copyfile(plotname, dropboxFolder,'f');
+
+    disp('Complete.')
 end
-
-%% plot spikerate vs directional velocity
-disp('Generating heatmap...')
-
-% without lag
-[~] = spikert_heatmapvelocity(int_forward,int_angular,int_sideway,int_spikert,int_time,0,1);
-sgtitle(strrep(filebase,'_','/'))
-% save plot
-cd(plotFolder)
-plotname = ['spikert_v_vel_heat_' filebase '.png'];
-saveas(gcf,plotname);
-copyfile(plotname, dropboxFolder,'f');
-% save vectorized plot
-cd(vectorFolder)
-plotname = ['spikert_v_vel_heat_' filebase '.svg'];
-set(gcf,'renderer','Painters')
-saveas(gcf, plotname)
-copyfile(plotname, dropboxFolder,'f');
-
-% with lag
-[~] = spikert_heatmapvelocity(int_forward,int_angular,int_sideway,int_spikert,int_time,1,1);
-sgtitle([strrep(filebase,'_','/') ' w/lag'])
-% save plot
-cd(plotFolder)
-plotname = ['spikert_v_vel_heatlag_' filebase '.png'];
-saveas(gcf,plotname);
-copyfile(plotname, dropboxFolder,'f');
-% save vectorized plot
-cd(vectorFolder)
-plotname = ['spikert_v_vel_heat_' filebase '.svg'];
-set(gcf,'renderer','Painters')
-saveas(gcf, plotname)
-copyfile(plotname, dropboxFolder,'f');
-
-disp('Complete.')
 
 end
 

@@ -39,7 +39,7 @@ if runSelect==0 %quiescent only
     runIdx = ~(forward<-moveThresh | forward>moveThresh);
     % for each pulse trial, set the percentage of time behavior must have been
     % sufficient for said trial to be included in the average
-    minInclusion = 0.8;
+    minInclusion = 0.5;
 elseif runSelect>0 %running only
     runIdx = schmittTrigger(forward,runSelect,0.1);
     minInclusion = 0.75;
