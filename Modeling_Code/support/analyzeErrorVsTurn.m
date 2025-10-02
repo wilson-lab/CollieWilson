@@ -26,7 +26,7 @@ function [posvang, posBins] = analyzeErrorVsTurn(visobj_history, rotvel_history,
 
     %% (optional) shift according to lag estimates
     % fetch shift indices for each lag
-    lag_ms = mean([runSettings.AOTU019_delay,runSettings.Others_delay]);
+    lag_ms = runSettings.visuomotor_delay;
     lag_idx = round(lag_ms / 1000 * runSettings.fs);
 
     % shift and exclude data at start/stop of trial

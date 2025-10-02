@@ -9,9 +9,9 @@
 % INPUTS:
 %   predicted_RF      - Struct containing the predicted receptive fields (RF) for neurons in the model.
 %                       These RFs define the neural responses to visual stimuli in the azimuthal space.
-%   comparisonType    - Type of comparison to perform: 'synapse', 'strength', or 'speed'.
+%   comparisonType    - Type of comparison to perform: 'synapse', 'aotu019/025silence', or 'speed'.
 %                       - 'synapse' compares inhibitory vs excitatory synapse types.
-%                       - 'strength' compares two different strength levels for the model.
+%                       - 'aotu019/025silence' compares two different strength levels for the model.
 %                       - 'speed' compares fast and slow visuomotor delays.
 %
 % DESCRIPTION:
@@ -22,6 +22,7 @@
 % CREATED: 10/30/2024 - MC
 % UPDATED: 11/16/2024 - MC added step function for measuring settling time
 %                          added direction selectivity model
+%          07/30/2025 - MC expanded silencing model
 %
 
 function modelPerformance(predicted_RF, comparisonType)
@@ -32,7 +33,7 @@ function modelPerformance(predicted_RF, comparisonType)
 close all;
 
 % Define the range to test
-kValues = [0,1.2];  % Steering gain (k) values to iterate over
+kValues = [0.8];  % Steering gain (k) values to iterate over
 nK = length(kValues);  % Number of k values
 stability_noiseLevel = 0.7;
 step_noiseLevel = 0.1;
@@ -41,24 +42,19 @@ step_startPos = 100;
 stability_simDuration = 60;
 step_simDuration = 11;
 settling_tolerance = 2; % degrees from 0
-conditionColors = {"#0072BD"; "#D95319";"#7E2F8E"};
+conditionColors = {"k"; "#6ca2e3";"#963977";"#e88598";"#ffc800"};
+
+thisSynapse = "inhibitory";  % Fixed
 
 % Variables depending on comparison type
-if strcmp(comparisonType, 'synapse')
-    comparisonLabel = {'Inhibitory', 'Excitatory'};
-    nComp = 2;
-    thisSynapse = {"inhibitory"; "excitatory"};
-    strengthValues = 1;  % Fixed
-elseif strcmp(comparisonType, 'strength')
-    comparisonLabel = {'Strength 1', 'Strength 0'};
-    nComp = 2;
-    thisSynapse = "inhibitory";  % Fixed
-    strengthValues = [1, 0];
-elseif strcmp(comparisonType, 'dirselective')
+if strcmp(comparisonType, 'dirselective')
+    % compare no DS, 019 DS, and 025 DS
     comparisonLabel = {'none', 'selective','flipped'};
     nComp = 3;
-    thisSynapse = "inhibitory";  % Fixed
-    strengthValues = 1;  % Fixed
+elseif strcmp(comparisonType, 'silence')
+    % compare normal, 019 silenced, 025 silenced, 019/025 silenced, minor silenced
+    comparisonLabel = {'full', 'AOTU019 0', 'AOTU025 0', 'Major 0', 'Minor 0'};
+    nComp = 5;
 end
 
 % Run model
@@ -70,7 +66,7 @@ metrics_IAE = zeros(nK, nComp);
 metrics_dirChangeTime = zeros(nK, nComp);
 
 % Preallocate to store binned averages
-indist_avg = [];
+all_binned_hist = [];
 rotvel_binned_avg = [];
 objvel_binned_avg = [];
 evt_avg = [];
@@ -93,27 +89,33 @@ for kIdx = 1:nK
 
     % Loop over comparison values
     for idx = 1:nComp
-        if strcmp(comparisonType, 'synapse')
-            thisType = thisSynapse{idx};
-            thisStrength = strengthValues;  % Fixed strength for synapse comparison
-        elseif strcmp(comparisonType, 'strength')
-            thisStrength = strengthValues(idx);
-            thisType = thisSynapse;  % Fixed synapse type for strength comparison
-        elseif strcmp(comparisonType, 'dirselective')
-            thisStrength = strengthValues; % Fixed
-            thisType = thisSynapse;  % Fixed
-            runSettings.dirselective = idx-1; %vary whether dsi included
+        % Fetch clean copy of RFs
+        thisTuning = predicted_RF;
+
+        if strcmp(comparisonType, 'dirselective') %direction selective model
+            runSettings.dirselective = idx-1;
+        elseif strcmp(comparisonType, 'silence')
+            switch idx
+                case 2 %silence 019
+                    thisTuning.AOTU019 = thisTuning.AOTU019 .* 0;
+                case 3 %silence 025
+                    thisTuning.AOTU025 = thisTuning.AOTU025 .* 0;
+                case 4 %silence 019/025
+                    thisTuning.AOTU019 = thisTuning.AOTU019 .* 0;
+                    thisTuning.AOTU025 = thisTuning.AOTU025 .* 0;
+                case 5 %silence minor
+                    thisTuning.sum = thisTuning.sum .* 0;
+            end
+        else
+            close all
+            error('Comparison not recognized! Check input to modelPerformance.')
         end
 
-        % Adjust tuning for strength if applicable
-        thisTuning = predicted_RF;
-        thisTuning.AOTU019 = thisTuning.AOTU019 .* thisStrength;  % Adjust tuning by strength
-
         % Run the AOTU steering model - stability
-        [timebase, visobj_history, input_history, rotvel_history] = aotu_steering_model(thisTuning, stability_noiseLevel, stability_startPos, thisType, stability_simDuration, thisK, 2, runSettings);
+        [timebase, visobj_history, input_history, rotvel_history] = aotu_steering_model(thisTuning, stability_noiseLevel, stability_startPos, thisSynapse, stability_simDuration, thisK, 2, runSettings);
         % Run the AOTU steering model - step
         startTime = 100;
-        [step_timebase, step_visobj_history, ~, ~] = aotu_steering_model(thisTuning, step_noiseLevel, step_startPos, thisType, step_simDuration, thisK, startTime, runSettings);
+        [step_timebase, step_visobj_history, ~, ~] = aotu_steering_model(thisTuning, step_noiseLevel, step_startPos, thisSynapse, step_simDuration, thisK, startTime, runSettings);
 
         % Calculate performance metrics
         metrics_results = calculatePerformanceMetrics(visobj_history, rotvel_history, timebase, plotSettings);
@@ -130,18 +132,19 @@ for kIdx = 1:nK
 
         % Analyze object position vs velocity
         [posvang, posBins] = analyzeErrorVsTurn(visobj_history, rotvel_history, runSettings); 
-        
-        % Compute normalized distribution of input history
-        [input_distribution, inBins] = compute_normalized_distribution(input_history, runSettings);
 
         % Calculate settling time
         avgSettlingTime(kIdx, idx) = calculateAverageSettlingTime(step_timebase, step_visobj_history, settling_tolerance,1)-step_timebase(startTime);
+
+        % Calculate input histogram
+        bins = 36;
+        binned_hist = input_histogram(input_history, bins);
 
         % Store the binned averages separately for each comparison
         rotvel_binned_avg(kIdx, :, idx) = rotvel_binned_avgs;
         objvel_binned_avg(kIdx, :, idx) = objvel_binned_avgs;
         evt_avg(kIdx, :, idx) = posvang;
-        indist_avg(kIdx,:, idx) = input_distribution;
+        all_binned_hist(:,:,idx) = binned_hist;
 
         % Plot example run
         if any(kIdx == selected_k_indices)
@@ -175,28 +178,22 @@ for kIdx = 1:nK
 end
 
 %% Save the example plot comparing the two conditions across selected k values
-sgtitle([' Example Runs for ' comparisonLabel{1} ' vs ' comparisonLabel{2}]);
-saveas(gcf, fullfile(folder.final, [comparisonLabel{1} 'v' comparisonLabel{2} '_ExampleRuns' '.png']));
+sgtitle([' Example Runs for ' comparisonType ' comparison...']);
+saveas(gcf, fullfile(folder.final, [comparisonType '_ExampleRuns' '.png']));
 set(gcf,'renderer','Painters')
-saveas(gcf, fullfile(folder.vectors, [comparisonLabel{1} 'v' comparisonLabel{2} '_ExampleRuns' '.svg']));
+saveas(gcf, fullfile(folder.vectors, [comparisonType '_ExampleRuns' '.svg']));
 
 %% Generate summary plots
 % Generate and save summary metrics plot
-generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE, metrics_IAE, comparisonLabel, folder);
-
-% Generate and save summary plot of binned crossing times
-%generateSummaryCrossing(nK, kValues, rotvel_binned_avg, objvel_binned_avg, rotvel_bins, comparisonLabel, folder);
+generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE, metrics_IAE, comparisonLabel, comparisonType, folder);
 
 % Generate and save summary plot of Angular Velocity vs Object Position (EVT)
-generateSummaryEVT(nK, kValues, evt_avg, posBins, comparisonLabel,folder);
-
-% Generate and save summary plot for steering drive
-%generateSteeringPlot(steering_drive, comparisonLabel, runSettings,folder)
-
-% Generate and save summary plot for inputs to DNa02
-%generateSummaryInputDistributions(nK, kValues, indist_avg, inBins, comparisonLabel, runSettings, folder)
+generateSummaryEVT(nK, kValues, evt_avg, posBins, comparisonLabel, comparisonType, folder);
 
 % Generate and save summary plot for settling time
-generateSettlingSummary(kValues, avgSettlingTime, comparisonLabel, folder)
+generateSettlingSummary(kValues, avgSettlingTime, comparisonLabel, comparisonType, folder)
+
+%% Generate and save summary plot for activity
+plot_binned_histograms(all_binned_hist, comparisonLabel)
 
 end

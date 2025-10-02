@@ -10,6 +10,7 @@
 %   evt               - 3D array of average angular velocity (k x position bins x conditions).
 %   posBins           - Vector defining the position bins (degrees).
 %   comparisonLabel   - Cell array with labels for all conditions being compared.
+%   comparisonType    - Name of comparison
 %   folder            - Struct with fields 'final' and 'vectors' specifying save locations.
 %
 % OUTPUTS:
@@ -19,7 +20,7 @@
 % UPDATED: 11/16/2024 - MC refactored for multiple conditions
 %
 
-function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, folder)
+function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, comparisonType, folder)
 
     % Determine number of conditions
     numConditions = size(evt, 3);
@@ -35,7 +36,7 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, folder)
         
         % Plot the relationship for all conditions
         for condIdx = 1:numConditions
-            plot(posBins, evt(kIdx, :, condIdx), '-', 'DisplayName', comparisonLabel{condIdx});
+            plot(posBins, evt(kIdx, :, condIdx), '-', 'linewidth', 1, 'DisplayName', comparisonLabel{condIdx});
         end
 
         % Customize the plot
@@ -46,7 +47,7 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, folder)
             legend('show', 'Location', 'northwest');
         end
         grid on;
-        ylim([-200 200]);
+        ylim([-150 150]);
         xlim([-80 80]);
     end
 
@@ -55,9 +56,9 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, folder)
              strjoin(comparisonLabel, ' vs ') ')']);
 
     % Save EVT plot in both PNG and SVG formats
-    saveas(gcf, fullfile(folder.final, [strjoin(comparisonLabel, 'v') '_Binned_EVT.png']));
+    saveas(gcf, fullfile(folder.final, [comparisonType '_Binned_EVT.png']));
     set(gcf, 'renderer', 'Painters');  % Ensure high-resolution SVG output by setting renderer
-    saveas(gcf, fullfile(folder.vectors, [strjoin(comparisonLabel, 'v') '_Binned_EVT.svg']));
+    saveas(gcf, fullfile(folder.vectors, [comparisonType '_Binned_EVT.svg']));
 
     % Apply zoomed x-axis limits to each tile
     for tileIdx = 1:nK
@@ -66,8 +67,8 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, folder)
     end
 
     % Save zoomed EVT plot in both PNG and SVG formats
-    saveas(gcf, fullfile(folder.final, [strjoin(comparisonLabel, 'v') '_Binned_EVT_Zoomed.png']));
+    saveas(gcf, fullfile(folder.final, [comparisonType '_Binned_EVT_Zoomed.png']));
     set(gcf, 'renderer', 'Painters');  % Set renderer for vector quality in zoomed version
-    saveas(gcf, fullfile(folder.vectors, [strjoin(comparisonLabel, 'v') '_Binned_EVT_Zoomed.svg']));
+    saveas(gcf, fullfile(folder.vectors, [comparisonType '_Binned_EVT_Zoomed.svg']));
 
 end

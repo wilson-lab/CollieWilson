@@ -53,13 +53,19 @@ AOTU025R = abs(noiTuning.AOTU025);  % Right side for AOTU025
 AOTU025L = flip(AOTU025R);     % Left side (flipped)
 groupedR = abs(noiTuning.sum);       % Right side for other neurons
 groupedL = flip(groupedR);       % Left side (flipped)
+
+% Option - include silencing
 if max(AOTU019R)==0
     AOTU019input = linspace(0, 1, 1000); % Input range
 else
     AOTU019input = linspace(0, max(AOTU019R), 1000); % Input range
 end
 AOTU019output = ELU(AOTU019input); % Output range
-AOTU025input = linspace(0, max(AOTU025R), 1000); % Input range
+if max(AOTU025R)==0
+    AOTU025input = linspace(0, 1, 1000); % Input range
+else
+    AOTU025input = linspace(0, max(AOTU025R), 1000); % Input range
+end
 AOTU025output = ELU(AOTU025input); % Output range
 
 % Optional - include direction selectivity
@@ -79,7 +85,7 @@ DNa02output = runSettings.DNa02output; % Output range for downstream neurons
 
 %% Run the simulation
 %Initialize simulation outputs
-input_history = zeros(numRuns, nTime, 2); % Inputs to downstream neurons (right/left)
+input_history = zeros(numRuns, nTime, 6); % Inputs to each left/right neuron
 DNa02R_history = zeros(numRuns, nTime);   % DNa02 right side activity
 DNa02L_history = zeros(numRuns, nTime);   % DNa02 left side activity
 DNa02RLdiff_history = zeros(numRuns, nTime);   % DNa02 right-left difference activity
@@ -125,7 +131,6 @@ for t = startTime+1:nTime
         right_motion_025 = visobj_history(:, t_Others) - visobj_history(:, t_Others - 1);
         left_motion_025 = -right_motion_025; % Left motion is the negative of right motion
     end
-
 
     % Initialize direction selectivity multipliers as ones
     ds_multiplier_right_019 = ones(size(right_motion_019));
@@ -173,9 +178,13 @@ for t = startTime+1:nTime
             current_inputL = l025o + l019o + groupedL(p2_Others);
     end
 
-    % Store the input history (right and left inputs)
-    input_history(:, t, 1) = current_inputR; % Right input
-    input_history(:, t, 2) = current_inputL; % Left input
+    % Store the input history
+    input_history(:, t, 1) = r019o;
+    input_history(:, t, 2) = l019o;
+    input_history(:, t, 3) = r025o;
+    input_history(:, t, 4) = l025o;
+    input_history(:, t, 5) = groupedR(p2_Others);
+    input_history(:, t, 6) = groupedL(p2_Others);
 
     %% Apply delay for DNa02 output
     % Compute DNa02 activity without delay

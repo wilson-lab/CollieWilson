@@ -33,12 +33,17 @@ saveas(gcf, fullfile(folder.settings, ['Model_Settings' '.png']));
 set(gcf,'renderer','Painters')
 saveas(gcf, fullfile(folder.vectors, ['Model_Settings' '.svg']));
 
-%% Run AOTU019 direction selectivity comparison model
+
+%% Run silencing comparison model
+close all
+modelPerformance(predicted_RF, 'silence');
+
+%% Run direction selectivity comparison model
+close all
+% restrict to AOTU019/025, remove minor pathway
 restricted_RF = predicted_RF;
 restricted_RF{:,1} = zeros(height(restricted_RF), 1);
 
 modelPerformance_trajectory(restricted_RF, 'dirselective');
 modelPerformance_step(restricted_RF, 'dirselective')
 
-%% Run AOTU019 elimination comparison model
-modelPerformance(predicted_RF, 'strength');  % Specify 'dirselective' as the comparison type.

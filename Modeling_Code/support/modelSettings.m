@@ -29,11 +29,12 @@ runSettings.fs = 100;        % Simulation update rate, in Hz
 runSettings.fpass = 1;       % Lowpass cutoff for random component, in Hz
 
 % Neuron settings
-runSettings.AOTU019_delay = 200; %ms
-runSettings.Others_delay = 200; %ms
+runSettings.visuomotor_delay = 200; %ms
+runSettings.AOTU019_delay = 450; %ms
+runSettings.Others_delay = runSettings.AOTU019_delay; %ms
 
 runSettings.dirselective = 0; %none
-runSettings.AOTU019dsi_penalty = 0.7;
+runSettings.AOTU019dsi_penalty = 0.66; % corresponds to 0.2 DSI
 runSettings.AOTU025dsi_penalty = 1;
 
 % Open-loop parameters

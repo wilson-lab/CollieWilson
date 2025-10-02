@@ -11,6 +11,7 @@
 %   metrics_ISE       - Matrix containing Integral of Squared Error (ISE) values for each condition (columns).
 %   metrics_IAE       - Matrix containing Integral of Absolute Error (IAE) values for each condition (columns).
 %   comparisonLabel   - Cell array of labels for all conditions being compared.
+%   comparisonType    - Name of comparison
 %   folder            - Struct with fields for saving figures (e.g., `final` and `vectors`).
 %
 % OUTPUTS:
@@ -20,7 +21,7 @@
 % UPDATED: 11/16/2024 - MC refactored for multiple conditions
 %
 
-function generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE, metrics_IAE, comparisonLabel, folder)
+function generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE, metrics_IAE, comparisonLabel, comparisonType, folder)
 
     % Determine number of conditions
     numConditions = size(metrics_prob, 2);
@@ -106,8 +107,8 @@ function generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE,
     sgtitle(['Summary of Model Performance Across Metrics (' strjoin(comparisonLabel, ' vs ') ')']);
 
     % Save summary metrics plot as PNG and SVG
-    saveas(gcf, fullfile(folder.final, [strjoin(comparisonLabel, 'v') '_SummaryMetrics.png']));
+    saveas(gcf, fullfile(folder.final, [comparisonType '_SummaryMetrics.png']));
     set(gcf, 'renderer', 'Painters');  % Set renderer to 'Painters' for better vector graphic rendering
-    saveas(gcf, fullfile(folder.vectors, [strjoin(comparisonLabel, 'v') '_SummaryMetrics.svg']));
+    saveas(gcf, fullfile(folder.vectors, [comparisonType '_SummaryMetrics.svg']));
 
 end
