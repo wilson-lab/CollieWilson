@@ -43,6 +43,7 @@ minFixationTime = settings.minFixationTime;
 %% Load in and pool pursuit data
 disp('Loading in and analyzing pursuit datasets...')
 walkThresh = 1; %mm/s
+arcRange = 0.5;
 
 for e = 1:nFlies
     disp(['Processing fly ' num2str(e) '/' num2str(nFlies) '...'])
@@ -70,6 +71,7 @@ for e = 1:nFlies
     [posHist, ~] = panel_histogram(walk_panelps, walk_panelps, 1);
     runHDHist(:,e) = posHist(:,2);
     cv(e) = circ_var(deg2rad(mod(walk_panelps(~isnan(walk_panelps)),360)));
+    [~, width_deg(e), ~, ~] = centeredArcWidth(walk_panelps);
 
     % Analyze directional velocity vs object position
     [posvang_rl, ~, posBins] = setpoint_errorvturn(walk_panelps, int_angular(:,:,1), int_time, settings, 1, 0);
@@ -99,6 +101,7 @@ for e = 1:nFlies
     [posHist, ~] = panel_histogram(walk_panelps_acc, walk_panelps_acc, 1);
     walkHDHist_acc(:,e) = posHist(:,2);
     cv_pre(e) = circ_var(deg2rad(mod(walk_panelps_acc(~isnan(walk_panelps_acc))',360)));
+    [~, width_deg_pre(e), ~, ~] = centeredArcWidth(walk_panelps_acc');
 
     % Generate binarized heading
     heading_range = 35; %deg
@@ -116,6 +119,7 @@ for e = 1:nFlies
         fix_panelps = thisFixation.panelps_run;
         fix_forward = thisFixation.forward_run;
         [cv_slow(e), cv_fast(e)] = cv_byfwd(fix_panelps, fix_forward);
+        [arc_slow(e), arc_fast(e)] = arc_byfwd(fix_panelps, fix_forward);
     end
 end
 
@@ -238,6 +242,7 @@ disp('Complete.')
 x = [1 2];
 cv_data = [cv_pre(:) cv(:)];   % nFlies × 2
 
+
 figure('Color','w'); set(gcf, 'Position', [100 100 800 500])
 hold on
 
@@ -271,6 +276,55 @@ text(0.95, 0.95, sprintf('p = %.4g', p), ...
 % Save plot
 cd(folder.summary)
 plotname = 'summary_cv';
+saveas(gcf, [plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox, 'f');
+
+% Save vectorized plot
+cd(folder.vector)
+set(gcf, 'renderer', 'Painters')
+saveas(gcf, [plotname '.svg'])
+copyfile([plotname '.svg'], folder.dropbox, 'f');
+disp('Complete.')
+
+
+%% Plot median absolute deviation from 0
+x = [1 2];
+arc_data = [width_deg_pre(:) width_deg(:)];   % nFlies × 2
+
+
+figure('Color','w'); set(gcf, 'Position', [100 100 800 500])
+hold on
+
+% Plot individual animals (gray lines with dots)
+for e = 1:nFlies
+    plot(x, arc_data(e,:), '.-', 'Color', [0.6 0.6 0.6], ...
+         'MarkerSize', 16, 'LineWidth', 1);
+end
+
+% Medians for each condition as horizontal dashes
+meds = median(arc_data,'omitnan');   % 1×2
+dashHalf = 0.20;                    
+plot([1-dashHalf 1+dashHalf], [meds(1) meds(1)], 'k-', 'LineWidth', 3);
+plot([2-dashHalf 2+dashHalf], [meds(2) meds(2)], 'r-', 'LineWidth', 3);
+
+% Cosmetics
+xlim([0.5 2.5]); ylim([0 360]);   % circ variance ranges 0–1
+xticks(x); xticklabels({'Pre-stim','During-stim'});
+ylabel('Half-containment width (°)');
+grid on; box off
+
+% Paired t-test on circular variance
+[~,p,~,~] = ttest(width_deg_pre, width_deg);
+
+% Add p-value to top right corner
+text(0.95, 0.95, sprintf('p = %.4g', p), ...
+     'Units','normalized', ...
+     'HorizontalAlignment','right', ...
+     'VerticalAlignment','top');
+
+% Save plot
+cd(folder.summary)
+plotname = 'summary_arc';
 saveas(gcf, [plotname '.png']);
 copyfile([plotname '.png'], folder.dropbox, 'f');
 
@@ -364,31 +418,31 @@ disp('Complete.')
 if contains(exptFolder,'P1')
     % Data: cv_pre(e) and cv(e), one value per fly
     x = [1 2];
-    cv_data = [cv_slow(:) cv_fast(:)];   % nFlies × 2
+    arc_data = [arc_slow(:) arc_fast(:)];   % nFlies × 2
 
     figure('Color','w'); set(gcf, 'Position', [100 100 800 500])
     hold on
 
     % Plot individual animals (gray lines with dots)
     for e = 1:nFlies
-        plot(x, cv_data(e,:), '.-', 'Color', [0.6 0.6 0.6], ...
+        plot(x, arc_data(e,:), '.-', 'Color', [0.6 0.6 0.6], ...
             'MarkerSize', 16, 'LineWidth', 1);
     end
 
     % Medians for each condition as horizontal dashes
-    meds = median(cv_data,'omitnan');   % 1×2
+    meds = median(arc_data,'omitnan');   % 1×2
     dashHalf = 0.20;
     plot([1-dashHalf 1+dashHalf], [meds(1) meds(1)], 'k-', 'LineWidth', 3);
     plot([2-dashHalf 2+dashHalf], [meds(2) meds(2)], 'r-', 'LineWidth', 3);
 
     % Cosmetics
-    xlim([0.5 2.5]); ylim([0 1]);   % circ variance ranges 0–1
+    xlim([0.5 2.5]); ylim([0 180]);   % circ variance ranges 0–1
     xticks(x); xticklabels({'Low fwd','High fwd'});
-    ylabel('Circular variance');
+    ylabel('50% arc width');
     grid on; box off
 
     % Paired t-test on circular variance
-    [~,p,~,~] = ttest(cv_pre, cv);
+    [~,p,~,~] = ttest(arc_slow, arc_fast);
 
     % Add p-value to top right corner
     text(0.95, 0.95, sprintf('p = %.4g', p), ...
@@ -398,7 +452,7 @@ if contains(exptFolder,'P1')
 
     % Save plot
     cd(folder.summary)
-    plotname = 'summary_cvfwd';
+    plotname = 'summary_arcfwd';
     saveas(gcf, [plotname '.png']);
     copyfile([plotname '.png'], folder.dropbox, 'f');
 

@@ -68,6 +68,13 @@ for e = 1:nFlies
     fix_angular(~thisFixation.idx_run) = nan;
     fix_sideway = int_sideway;
     fix_sideway(~thisFixation.idx_run) = nan;
+    % Find walking periods
+    walk_panelps = int_panelps;
+    walkIdx = [];
+    for g = 1:nGain
+        walkIdx(:,:,g) = schmittTrigger(int_forward(:,:,g), walkThresh, 0.1);
+    end
+    walk_panelps(~walkIdx) = nan;
 
     % Calculate run parameters per trial condition
     thisFixationT = reshape(sum(etime(sum(~isnan(fix_panelps))+1)),1,nGain);  % Fixation time (s)
@@ -299,12 +306,10 @@ disp('Comparing base parameters...')
 close all
 
 % Call the general ANOVA function to analyze the contribution of genotype and gain to general performance
-if filebase == 'AOTU019_KIR'
-    [p_runTime, ~] = run_genotype_anova_repeated(kirRunTime(:, 1:nGain), wtRunTime(:, 1:nGain), naRunTime(:, 1:nGain), 'RunTime', folder);
-    [p_runSpeed, ~] = run_genotype_anova_repeated(kirRunSpeed(:, 1:nGain), wtRunSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'RunSpeed', folder);
-    [p_turnSpeed, ~] = run_genotype_anova_repeated(kirTurnSpeed(:, 1:nGain), wtTurnSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'TurnSpeed', folder);
-    anova_pvals = {p_runTime, p_runSpeed, p_turnSpeed};
-end
+[p_runTime, ~] = run_genotype_anova_repeated(kirRunTime(:, 1:nGain), wtRunTime(:, 1:nGain), naRunTime(:, 1:nGain), 'RunTime', folder);
+[p_runSpeed, ~] = run_genotype_anova_repeated(kirRunSpeed(:, 1:nGain), wtRunSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'RunSpeed', folder);
+[p_turnSpeed, ~] = run_genotype_anova_repeated(kirTurnSpeed(:, 1:nGain), wtTurnSpeed(:, 1:nGain), naRunSpeed(:, 1:nGain), 'TurnSpeed', folder);
+anova_pvals = {p_runTime, p_runSpeed, p_turnSpeed};
 
 % Call the general ANOVA function to analyze the contribution of genotype to general performance
 [p_runTime2, ~] = run_genotype_anova1(kirRunTime(:, end), wtRunTime(:, end), naRunTime(:, end), 'RunTime2', folder);
@@ -788,6 +793,90 @@ saveas(gcf, [plotname '.svg'])
 copyfile([plotname '.svg'], folder.dropbox, 'f');
 disp('Complete.')
 
+%% Setpoint performance for low gain only
+close all
+
+% --- Extract first column per genotype
+kir = kirSPprob(:,1);
+wt  = wtSPprob(:,1);
+na  = naSPprob(:,1);
+
+% --- X positions and labels
+xpos   = [1 2 3];
+labels = {'Kir','WT','Na'};
+colKir = settings.geneColor{1};
+colWT  = settings.geneColor{2};
+colNa  = settings.geneColor{3};
+
+% --- Plot
+figure('Color','w'); set(gcf, 'Position', [100 100 200 400]); hold on;
+yl = [0 1];
+jit = 0.06;              % horizontal jitter
+ms  = 5;                % marker size for dots
+
+% helper to scatter with jitter in black, ignoring NaNs
+plot_jitter = @(x,y) arrayfun(@(yy) ...
+    plot(x + (rand*2-1)*jit, yy, '.', 'Color', [0 0 0], 'MarkerSize', ms), ...
+    y(~isnan(y)));
+
+% Plot per genotype
+plot_jitter(xpos(1), kir);
+plot_jitter(xpos(2), wt);
+plot_jitter(xpos(3), na);
+
+% Medians (horizontal dashed lines in genotype color)
+medKir = median(kir,'omitnan');
+medWT  = median(wt, 'omitnan');
+medNa  = median(na, 'omitnan');
+
+line([xpos(1)-0.25 xpos(1)+0.25], [medKir medKir], 'Color', colKir, 'LineStyle','-', 'LineWidth',2);
+line([xpos(2)-0.25 xpos(2)+0.25], [medWT  medWT ], 'Color', colWT,  'LineStyle','-', 'LineWidth',2);
+line([xpos(3)-0.25 xpos(3)+0.25], [medNa  medNa ], 'Color', colNa,  'LineStyle','-', 'LineWidth',2);
+
+% Axes & cosmetics
+xlim([0.5 3.5]);
+ylim(yl);
+xticks(xpos); xticklabels(labels);
+ylabel('Setpoint Probability');
+box on;
+
+% --- Mixed-effects model: SPprob ~ Genotype + (1 | Animal)
+% Build a long table with Genotype and Animal IDs
+vals       = [kir; wt; na];
+geno       = [repelem({'Kir'}, numel(kir))'; repelem({'WT'}, numel(wt))'; repelem({'Na'}, numel(na))'];
+animal_id  = arrayfun(@(k) sprintf('Kir_%02d',k), (1:numel(kir))', 'uni',0);
+animal_id  = [animal_id; arrayfun(@(k) sprintf('WT_%02d',k), (1:numel(wt))', 'uni',0)];
+animal_id  = [animal_id; arrayfun(@(k) sprintf('Na_%02d',k), (1:numel(na))', 'uni',0)];
+
+T = table(vals, categorical(geno), categorical(animal_id), ...
+          'VariableNames', {'SPprob','Genotype','Animal'});
+
+% Drop rows with NaN
+T = T(~isnan(T.SPprob), :);
+
+% Fit LME (random intercept per animal, fixed Genotype)
+lme = fitlme(T, 'SPprob ~ 1 + Genotype + (1|Animal)');
+
+% Display results
+disp('--- Mixed-Effects Model (SPprob ~ Genotype + (1|Animal)) ---');
+disp(lme);
+disp('--- Fixed Effects ANOVA (effect of Genotype) ---');
+result = anova(lme,'DFMethod','Satterthwaite');
+disp(result);
+
+text(0.5, 0.9, ['p = ' num2str(result.pValue(2))], 'Units', 'normalized', 'FontSize', 7);
+
+cd(folder.summary)
+plotname = 'basics_setpoint_stats95';
+saveas(gcf, [plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox, 'f');
+
+cd(folder.vector)
+set(gcf, 'renderer', 'Painters')
+saveas(gcf, [plotname '.svg'])
+copyfile([plotname '.svg'], folder.dropbox, 'f');
+disp('Complete.')
+
 
 %% Setpoint performance parameters
 disp('Comparing setpoint performance...')
@@ -811,7 +900,7 @@ for p = 1:5
     end
 
     % Call the general ANOVA function to analyze the contribution of genotype and gain
-    if exptFolder == 'AOTU019 KIR'
+    if contains(exptFolder,'AOTU019 KIR')
         [p_val, ~] = run_genotype_anova_repeated(kirData, wtData, naData, nameData, folder);
         anova_pvals_setpoint{p} = p_val;  % Store p-values
         pval_text = {['p(gene) = ' num2str(anova_pvals_setpoint{p}(1))] ; ['p(k) = ' num2str(anova_pvals_setpoint{p}(2))] ; ['p(g*k) = ' num2str(anova_pvals_setpoint{p}(3))]};
@@ -1816,6 +1905,138 @@ copyfile([plotname '.svg'], folder.dropbox,'f');
 
 disp('Complete.')
 
+%% Combined error velocity across gain conditions
+% Initialize figure for combined plot
+figure; set(gcf,'Position',[100 100 600 600])
+tiledlayout(1,1,'TileSpacing','compact')  % Adjusting to a single combined plot
+angLimA = [-60 60];
+
+% Combined plot with SEM for each genotype across all gain conditions
+nexttile; hold on
+storeVVT = {};
+
+for g = 1:3
+    switch g
+        case 1
+            evt = kirVVT;
+            thisN = nKIR;
+            evt_color = settings.geneColor{1};  % Color for KIR
+        case 2
+            evt = wtVVT;
+            thisN = nWT;
+            evt_color = settings.geneColor{2};  % Color for WT
+        case 3
+            evt = naVVT;
+            thisN = nNA;
+            evt_color = settings.geneColor{3};  % Color for NA
+    end
+
+    % Calculate the mean across gain conditions per animal
+    meanVVT_animal = mean(evt, 2, 'omitnan');  % Mean across gains for each animal
+    meanVVT = mean(meanVVT_animal, 3, 'omitnan');  % Mean across animals
+    semVVT = std(meanVVT_animal, 0, 3, 'omitnan') ./ sqrt(thisN);  % SEM calculation
+    meanVVT(isnan(meanVVT)) = 0;
+    semVVT(isnan(semVVT)) = 0;
+
+    % Store
+    sz = size(meanVVT_animal);
+    idx = find(sz == 1, 1, 'first');  % find singleton dimension
+    newOrder = [setdiff(1:numel(sz), idx, 'stable'), idx];
+    storeVVT{g} = permute(meanVVT_animal, newOrder);
+
+    % Plot EVT with SEM
+    plot(velBins, meanVVT, 'Color', evt_color, 'LineWidth', settings.lwAvg)
+
+    % Plot SEM using patch
+    sem_patch = patch([velBins'; flipud(velBins')], ...
+        [meanVVT - semVVT; flipud(meanVVT + semVVT)], ...
+        'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+    sem_patch.FaceColor = evt_color;
+
+    axis tight; xline(0); yline(0); xlim([-500 500]); ylim(angLimA);
+end
+
+% Labels and title
+title('Combined Gains')
+xlabel('Object Velocity(deg/s)')
+ylabel('Rotational Velocity (deg/s)')
+
+% Save combined plot as PNG and SVG
+cd(folder.summary)
+plotname = 'errorvel_v_turn_combined_across_gains';
+saveas(gcf,[plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox,'f');
+cd(folder.vector)
+set(gcf,'renderer','Painters')
+saveas(gcf, [plotname '.svg']);
+copyfile([plotname '.svg'], folder.dropbox,'f');
+
+%% stats
+genotypes = {'KIR', 'WT', 'NA'};
+
+allData = [];
+for g = 1:numel(storeVVT)
+    thisData = storeVVT{g};                 % nBins × nAnimals
+    [nBins, nAnimals] = size(thisData);
+
+    % Create long table for this genotype
+    T = table;
+    T.Bin       = repmat(velBins(:), nAnimals, 1);
+    T.Animal    = categorical(repelem((1:nAnimals)', nBins));
+    T.Genotype  = categorical(repmat(genotypes(g), nBins * nAnimals, 1));
+    T.Response  = thisData(:);
+
+    % Append
+    allData = [allData; T];
+end
+
+% --- Fit linear mixed-effects model ---
+lme = fitlme(allData, 'Response ~ Bin * Genotype + (1|Animal)');
+
+% --- Display results ---
+anova(lme)
+
+% Inputs:
+% storeVVT{1}=KIR, {2}=WT, {3}=NA  (nBins x nAnimals, NaNs allowed)
+% velBins: nBins x 1 vector
+
+genos = {'KIR','WT','NA'};
+nBins = numel(velBins);
+
+rows = {};
+for b = 1:nBins
+    y = []; g = {};
+    for gi = 1:3
+        v = storeVVT{gi}(b, :)';
+        v = v(~isnan(v));
+        y = [y; v]; %#ok<AGROW>
+        g = [g; repmat(genos(gi), numel(v), 1)]; %#ok<AGROW>
+    end
+    if numel(unique(g)) < 2 || numel(y) < 3
+        continue  % not enough data for this bin
+    end
+
+    % One-way ANOVA (no figure)
+    [~,~,stats] = anova1(y, g, 'off');
+
+    % Tukey-Kramer within this bin
+    C = multcompare(stats, 'ctype', 'tukey-kramer', 'display', 'off'); 
+    % C columns: [i j lower diff upper p]
+    giNames = stats.gnames;  % order used by multcompare
+
+    for k = 1:size(C,1)
+        rows(end+1, :) = { ...
+            velBins(b), giNames{C(k,1)}, giNames{C(k,2)}, ...   % Bin, Group1, Group2
+            C(k,4), C(k,3), C(k,5), C(k,6)}; %#ok<AGROW>
+    end
+end
+
+posthoc = cell2table(rows, 'VariableNames', ...
+    {'Bin','Group1','Group2','Estimate','CI_Lower','CI_Upper','pValue_Tukey_withinBin'});
+
+p = posthoc.pValue_Tukey_withinBin;
+posthoc.p_FDR_BH = fdr_bh(p);
+posthoc.sig_FDR_05 = posthoc.p_FDR_BH < 0.05;
 
 %% Relationship between error and acceleration
 disp('Comparing relationship between error and acceleration...')

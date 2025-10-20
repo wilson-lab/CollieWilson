@@ -32,7 +32,7 @@ nCond = size(panelvel,3);
 
 % set velocity bin parameters
 velMax = 500; %+/- deg/s
-velBin = 20; %deg/s
+velBin = 100; %deg/s
 
 % create velocity bins
 velEdge = -velMax-velBin/2:velBin:velMax+velBin/2; % bin edges

@@ -154,6 +154,7 @@ allAngular = cell(1, nFlies);    % Storage for angular velocities
 allSideway = cell(1, nFlies);    % Storage for sideways velocities
 allSpikeRt = cell(1, nFlies);    % Storage for spike rates
 storeNames = {};
+fr_counts = [];
 
 % Loop through each trial, loading and processing data for each fly
 for nt = 1:nFlies
@@ -171,6 +172,9 @@ for nt = 1:nFlies
     allAngular{nt} = int_angular;
     allSideway{nt} = int_sideway;
     allSpikeRt{nt} = int_spikert;
+
+    % Calculate distribution of firing rates
+    [fr_bins, fr_counts(nt,:)] = compute_firingrate_distribution(int_spikert);
 
     % Apply median filtering to voltage data to remove transient spikes
     mf_voltage = spikeFilter(int_voltage, int_time);
@@ -1021,6 +1025,7 @@ end
 disp('Analying motion pulse vs spikerate response...')
 cd(folder.summary)
 store_ds = []; store_all75_ds = []; store_all25_ds = [];
+storeVar = []; storeMean = []; storeSNR = [];
 close all
 peak_srR_store = [];
 ds_limit = [-1.2 1.2];
@@ -1051,6 +1056,12 @@ for r = 2
             thisSpikert = allSpikeRt{nt};
             % determine relationship between pulse and spikerate
             [~, thisMean] = pulse_v_output(thisPanelPs,thisForward,thisSpikert,int_time,p,pulseSpeeds,nSweep,thisRun);
+            if r==2
+                [posVar, posMean, posSNR] = pulse_v_output_snr(thisPanelPs,thisForward,thisSpikert,int_time,p,pulseSpeeds,nSweep,thisRun);
+                storeVar(nt,:,p) = posVar;
+                storeMean(nt,:,p) = posMean;
+                storeSNR(nt,:,p) = posSNR;
+            end
             % if first run, store motion pulse positions
             if nt == 1
                 % sweep positions
@@ -1477,15 +1488,18 @@ for r = 2
 
 end
 
-if motionCheck
-    analyze_peak_srR(folder, peak_srR_store)
-    [~, stats, ~] = run_dir_sweep_lme(avg_srRL_Rightward, avg_srRL_Leftward)
-end
+% if motionCheck
+%     analyze_peak_srR(folder, peak_srR_store)
+%     [~, stats, ~] = run_dir_sweep_lme(avg_srRL_Rightward, avg_srRL_Leftward)
+% end
 
 % save direction selectivity data
 cd(folder.compare)
 dataname = strjoin({'ds', filebase}, '_');
 save([dataname '.mat'], 'store_ds','store_all75_ds','store_all25_ds');
+% save snr data
+dataname = strjoin({'snr', filebase}, '_');
+save([dataname '.mat'], 'storeVar', 'storeMean', 'storeSNR');
 
 %% Model FR to turning
 if nt_t>1
@@ -2295,6 +2309,45 @@ if nt_t>1
         end
     end
 end
+
+%% Plot firing rate distribution
+% Bin centers for plotting
+binCenters = fr_bins(1:end-1) + diff(fr_bins)/2;   % 0:20:200 -> centers at 10:20:190
+
+% Mean and SEM across animals
+meanCounts_on = mean(fr_counts, 1, 'omitnan');
+semCounts_on  = std(fr_counts, 0, 1, 'omitnan') ./ sqrt(nFlies);
+
+% Figure and layout
+figure; set(gcf, 'Position', [100 100 500 800]); hold on;
+
+% SEM patch
+x_patch = [binCenters, fliplr(binCenters)];
+y_patch = [meanCounts_on - semCounts_on, fliplr(meanCounts_on + semCounts_on)];
+sp = patch(x_patch(:), y_patch(:), 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+sp.FaceColor = 'r';  % match line color
+% Mean line
+plot(binCenters, meanCounts_on, 'LineWidth', 2, 'Color', 'r');
+
+% Axes/labels
+xlim([fr_bins(1) fr_bins(end)]);
+ylim([0, 0.5]);
+xlabel('Firing rate (Hz)');
+ylabel('Probability');
+title('Firing rate distribution (mean \pm SEM across animals)');
+box off; set(gca, 'Layer', 'top');
+
+% save plot
+cd(folder.summary)
+plotname = 'fr_distribution';
+saveas(gcf,[plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox,'f');
+% save vectorized plot
+cd(folder.vector)
+set(gcf,'renderer','Painters')
+saveas(gcf, [plotname '.svg'])
+copyfile([plotname '.svg'], folder.dropbox,'f');
+
 %% end
 disp('ALL ANALYSES COMPLETE.')
 end

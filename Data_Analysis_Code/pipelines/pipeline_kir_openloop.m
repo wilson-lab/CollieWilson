@@ -1251,8 +1251,14 @@ for d = 1:2
     % store controls together
     if d==1 %right
         peakControls(:,:,d) = [peakWT(:,:) peakNA(:,:)];
+        store_peakKIR(:,:,d) = peakKIR;
+        store_peakWT(:,:,d) = peakWT;
+        store_peakNA(:,:,d) = peakNA;
     elseif d==2 %left
         peakControls(:,:,d) = [peakWT(:,:) peakNA(:,:)];
+        store_peakKIR(:,:,d) = peakKIR;
+        store_peakWT(:,:,d) = peakWT;
+        store_peakNA(:,:,d) = peakNA;
     end
 
 end
@@ -1358,6 +1364,153 @@ saveas(gcf, append(plotname, '.svg'));
 copyfile(append(plotname, '.svg'), folder.dropbox, 'f');
 
 
+%% ─────────────── 3-GENOTYPE ANALYSIS: RIGHTWARD vs LEFTWARD ───────────────
+% Combine data across all genotypes
+peakKIR_RL = [];
+peakWT_RL = [];
+peakNA_RL = [];
+
+% Compute RL difference for each genotype
+peakKIR_RL(:,:,1) = store_peakKIR(:,:,1) - flip(store_peakKIR(:,:,2),1);
+peakKIR_RL(:,:,2) = store_peakKIR(:,:,2) - flip(store_peakKIR(:,:,1),1);
+
+peakWT_RL(:,:,1) = store_peakWT(:,:,1) - flip(store_peakWT(:,:,2),1);
+peakWT_RL(:,:,2) = store_peakWT(:,:,2) - flip(store_peakWT(:,:,1),1);
+
+peakNA_RL(:,:,1) = store_peakNA(:,:,1) - flip(store_peakNA(:,:,2),1);
+peakNA_RL(:,:,2) = store_peakNA(:,:,2) - flip(store_peakNA(:,:,1),1);
+
+% Keep only overlapping sweep positions
+peakKIR_RL = peakKIR_RL(idxR,:,:);
+peakWT_RL  = peakWT_RL(idxR,:,:);
+peakNA_RL  = peakNA_RL(idxR,:,:);
+
+% Find valid flies (no NaNs across all positions and directions)
+validKIR = ~any(any(isnan(peakKIR_RL),1),3);
+validWT  = ~any(any(isnan(peakWT_RL),1),3);
+validNA  = ~any(any(isnan(peakNA_RL),1),3);
+
+% Filter for valid animals
+peakKIR_RL = peakKIR_RL(:,validKIR,:);
+peakWT_RL  = peakWT_RL(:,validWT,:);
+peakNA_RL  = peakNA_RL(:,validNA,:);
+
+% Counts
+nKIR = size(peakKIR_RL,2);
+nWT  = size(peakWT_RL,2);
+nNA  = size(peakNA_RL,2);
+
+% Build long-format table for LME
+
+% Flatten data for each genotype
+data_all = [peakKIR_RL(:); peakWT_RL(:); peakNA_RL(:)];
+
+[positionsKIR, animalsKIR, directionsKIR] = ndgrid(1:size(peakKIR_RL,1), 1:nKIR, 1:2);
+[positionsWT,  animalsWT,  directionsWT]  = ndgrid(1:size(peakWT_RL,1),  1:nWT,  1:2);
+[positionsNA,  animalsNA,  directionsNA]  = ndgrid(1:size(peakNA_RL,1),  1:nNA,  1:2);
+
+% Combine label vectors
+SweepPos = categorical([positionsKIR(:); positionsWT(:); positionsNA(:)]);
+Direction = categorical([directionsKIR(:); directionsWT(:); directionsNA(:)]);
+FlyID = categorical([ ...
+    strcat("KIR_", string(animalsKIR(:))); ...
+    strcat("WT_", string(animalsWT(:))); ...
+    strcat("NA_", string(animalsNA(:))) ...
+]);
+Genotype = categorical([ ...
+    repmat("KIR", numel(positionsKIR), 1); ...
+    repmat("WT",  numel(positionsWT), 1); ...
+    repmat("NA",  numel(positionsNA), 1) ...
+]);
+
+% Combine into table
+T_all = table(data_all, SweepPos, Direction, Genotype, FlyID, ...
+    'VariableNames', {'Turning', 'SweepPos', 'Direction', 'Genotype', 'FlyID'});
+
+% Remove NaNs
+T_all = T_all(~isnan(T_all.Turning), :);
+
+% Fit Linear Mixed Effects Model
+lme_geno = fitlme(T_all, ...
+    'Turning ~ Genotype*SweepPos*Direction + (1|FlyID)');
+
+% Extract ANOVA results
+a_geno = anova(lme_geno);
+disp(a_geno);
+
+pGeno = a_geno.pValue(strcmp(a_geno.Term, 'Genotype'));
+pSweep = a_geno.pValue(strcmp(a_geno.Term, 'SweepPos'));
+pDir = a_geno.pValue(strcmp(a_geno.Term, 'Direction'));
+pInt = a_geno.pValue(strcmp(a_geno.Term, 'Genotype:SweepPos:Direction'));
+
+% ─────────────── Plot mean ± SEM for each genotype ───────────────
+x_overlap = overlapPos;
+
+figure; hold on;
+cols = [0.3 0.3 0.3; 0 0 1; 0.5 0 0.9]; % [gray WT; blue KIR; purple NA]
+genoNames = {'KIR','WT','NA'};
+genoData = {peakKIR_RL, peakWT_RL, peakNA_RL};
+
+for g = 1:3
+    meanR = mean(genoData{g}(:,:,1), 2, 'omitnan');
+    semR  = std(genoData{g}(:,:,1), 0, 2, 'omitnan') ./ sqrt(sum(~isnan(genoData{g}(:,:,1)), 2));
+    meanL = mean(genoData{g}(:,:,2), 2, 'omitnan');
+    semL  = std(genoData{g}(:,:,2), 0, 2, 'omitnan') ./ sqrt(sum(~isnan(genoData{g}(:,:,2)), 2));
+
+    errorbar(x_overlap, meanR, semR, '-', 'Color', cols(g,:), 'LineWidth', 1.3, ...
+        'DisplayName', [genoNames{g} ' Rightward']);
+    errorbar(x_overlap, meanL, semL, '--', 'Color', cols(g,:), 'LineWidth', 1.3, ...
+        'DisplayName', [genoNames{g} ' Leftward']);
+end
+
+xlabel('Sweep Position');
+ylabel('Peak Turning Response');
+title(['Peak Turning by Direction and Genotype (n = ' ...
+    num2str(nKIR+nWT+nNA) ' total)']);
+legend('Location','bestoutside');
+grid on; yline(0);
+xticks([-150:30:150]);
+
+% Annotate stats
+text(0.75, 0.10, sprintf('p_{Genotype} = %.3g', pGeno), 'Units', 'normalized', 'HorizontalAlignment', 'right');
+text(0.75, 0.05, sprintf('p_{SweepPos} = %.3g', pSweep), 'Units', 'normalized', 'HorizontalAlignment', 'right');
+text(0.75, 0.00, sprintf('p_{Direction} = %.3g', pDir), 'Units', 'normalized', 'HorizontalAlignment', 'right');
+
+hold off;
+
+% Save figure
+cd(folder.summary)
+plotname = 'mopulse_motiondir_genotypes';
+saveas(gcf, append(plotname, '.png'));
+copyfile(append(plotname, '.png'), folder.dropbox, 'f');
+cd(folder.vector)
+set(gcf, 'renderer', 'Painters');
+saveas(gcf, append(plotname, '.svg'));
+copyfile(append(plotname, '.svg'), folder.dropbox, 'f');
+
+%% Preallocate results
+uniquePos = categories(T_all.SweepPos);
+pvals = nan(length(uniquePos), 1);
+
+for i = 1:length(uniquePos)
+    % Subset data for this sweep position
+    subT = T_all(T_all.SweepPos == uniquePos{i}, :);
+
+    % Fit model for Genotype effect (account for repeated measures by FlyID)
+    lme_sub = fitlme(subT, 'Turning ~ Genotype + (1|FlyID)');
+
+    % Extract ANOVA table
+    a = anova(lme_sub);
+    pvals(i) = a.pValue(strcmp(a.Term, 'Genotype'));
+end
+
+% Apply multiple comparison correction (FDR)
+[p_fdr, p_mask] = fdr_bh(pvals);
+
+% Display results
+T_posthoc = table(uniquePos, pvals, p_fdr, p_mask, ...
+    'VariableNames', {'SweepPos', 'p_uncorrected', 'p_FDR', 'SigAfterFDR'});
+disp(T_posthoc)
 
 %% motion pulse: plot directional velocity means together pool L+R
 disp('Analyzing pursuit behavior during motion pulse experiment...')

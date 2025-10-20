@@ -91,6 +91,10 @@ for e = 1:nFlies
 
         [posHist, ~] = panel_histogram(run_panelps, fix_panelvel(:,:,o), 1);
         fixationHDHist(:,o,e) = posHist(:,2);
+
+        % Calculate 50% arc width
+        arcRange = 0.5;
+        [arc_widths(e,o), ~, ~, ~, ~] = centeredArcWidth(fix_panelps(:,:,o), arcRange);
     end
 
     [posvang, posvang_rl, posBins] = setpoint_errorvturn(fix_panelps, fix_angular, int_time, settings, 1, 0);
@@ -512,6 +516,62 @@ set(gcf,'renderer','Painters')
 saveas(gcf, [plotname '.svg'])
 copyfile([plotname '.svg'], folder.dropbox,'f');
 disp('Complete.')
+
+%% Analyze arc widths
+% Plot 50% circular width per animal and object condition
+
+figure; hold on;
+
+% Basic settings
+xvals = 1:nObj;
+linewidth_animal = 0.5;
+marker_size = 20;
+median_linewidth = 3;
+
+% Plot each animal as connected points
+for e = 1:nFlies
+    plot(xvals, arc_widths(e,:), '-k', 'LineWidth', linewidth_animal, ...
+        'Marker', '.', 'MarkerSize', marker_size);
+end
+
+% Overlay medians as thick horizontal dashes
+for o = 1:nObj
+    med_val = median(arc_widths(:,o), 'omitnan');
+    plot(o, med_val, '_', 'Color', 'k', 'MarkerSize', 24, ...
+        'LineWidth', median_linewidth);
+end
+
+% Format axes
+xlim([0.5 nObj+0.5]);
+xticks(1:nObj);
+xlabel('Visual stimulus');
+ylabel('50% circular width (°)');
+box off;
+set(gca, 'TickDir', 'out');
+
+title('Circular width across visual stimuli');
+
+% Reshape into long format for fitlme
+[fly_idx, obj_idx] = ndgrid(1:nFlies, 1:nObj);
+tbl = table;
+tbl.Animal = categorical(fly_idx(:));      % random effect
+tbl.Object = categorical(obj_idx(:));      % fixed effect
+tbl.Width  = arc_widths(:);                % dependent variable
+
+% Remove NaNs if present
+tbl = rmmissing(tbl);
+
+% ----------------------------------------------------
+% Fit linear mixed-effects model:
+% Width ~ Object + (1|Animal)
+lme = fitlme(tbl, 'Width ~ Object + (1|Animal)');
+
+% ----------------------------------------------------
+% Display model results
+disp('--- Linear Mixed-Effects Model Summary ---');
+disp(lme);
+anova_lme = anova(lme);
+disp(anova_lme);
 
 %% end
 disp('ALL ANALYSES COMPLETE.')

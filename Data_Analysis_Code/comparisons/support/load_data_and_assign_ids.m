@@ -1,73 +1,64 @@
-% LOAD_DATA_AND_ASSIGN_IDS
+function [names, ids, rval_ang, lag_ang] = load_xc_overlaps(folder_motion, folder_bg, all_names, settings)
+% Rows = overlapping animals; Cols = [bg1 (dark+arousal), bg2 (dark), motion].
+% Outputs:
+%   rval_ang : N x 3 matrix of peak correlation values
+%   lag_ang  : N x 3 matrix of peak lag values
 %
-% This function loads cross-correlation data for each animal, assigns unique IDs,
-% and extracts peak lag and correlation values for both angular (ang) and forward (fwd) motion.
-% Data is extracted for two conditions: background (dark) and motion.
-%
-% INPUTS:
-%   folder_motion      - Path to the folder containing motion condition data.
-%   folder_background  - Path to the folder containing background (dark) condition data.
-%   all_names          - Cell array of animal names.
-%   settings           - Structure containing settings, including:
-%                        settings.minXCorrProm - Minimum prominence for peak detection.
-%
-% OUTPUTS:
-%   animal_ids         - Array of unique animal IDs.
-%   conditions         - Array indicating condition type (1 = Dark, 2 = Motion).
-%   rval_data          - Nx2 array of peak correlation values [ang, fwd].
-%   lag_data           - Nx2 array of peak lag times [ang, fwd].
-%
-% CREATED: 03/18/2025 - MC
+% CREATED: 10/19/2025 - MC
 
-function [animal_ids, conditions, rval_data, lag_data] = load_data_and_assign_ids(folder_motion, folder_background, all_names, settings)
-    % Load cross-correlation data, assigning animal IDs across conditions
-    animal_ids = [];
-    conditions = [];
-    rval_data = [];
-    lag_data = [];
-    
-    % Determine the year prefix based on folder name
-    if contains(folder_background, 'AOTU019')
-        year_prefix = '2023';
-    elseif contains(folder_background, 'AOTU025')
-        year_prefix = '2024';
+    % Determine year prefix
+    if contains(folder_bg,'AOTU019')
+        yp = '2023';
+    elseif contains(folder_bg,'AOTU025')
+        yp = '2024';
     else
-        error('Folder name must contain either "AOTU019" or "AOTU025" to set the correct year prefix.');
+        error('folder_bg must contain AOTU019 or AOTU025');
     end
-    
-    unique_id = 1; % Initialize unique ID counter
-    animal_id_map = containers.Map; % Map to hold animal name-ID pairs
-    
-    for n = 1:length(all_names)
-        name = all_names{n};
-        
-        % Assign an ID to each animal, reusing if animal is present in both conditions
-        if ~isKey(animal_id_map, name)
-            animal_id_map(name) = unique_id;
-            unique_id = unique_id + 1;
+
+    % Check which files exist
+    has_m  = false(size(all_names));
+    has_b1 = false(size(all_names));
+    has_b2 = false(size(all_names));
+    for i = 1:numel(all_names)
+        nm = all_names{i};
+        has_m(i)  = isfile(fullfile(folder_motion, [nm '_xc.mat']));
+        has_b1(i) = isfile(fullfile(folder_bg, [yp '_' nm '_1_xc.mat']));
+        has_b2(i) = isfile(fullfile(folder_bg, [yp '_' nm '_2_xc.mat']));
+    end
+
+    % Keep overlapping animals (motion + at least one background)
+    keep = has_m & (has_b1 | has_b2);
+    names = all_names(keep);
+    has_b1 = has_b1(keep);
+    has_b2 = has_b2(keep);
+    N = numel(names);
+    ids = (1:N)';
+
+    % Initialize output matrices
+    rval_ang = nan(N,3);
+    lag_ang  = nan(N,3);
+
+    % Load data
+    for r = 1:N
+        nm = names{r};
+
+        if has_b1(r)
+            S = load(fullfile(folder_bg, [yp '_' nm '_1_xc.mat']), 'r_val','lag_t');
+            [pl, pr] = find_peak_lag_rval(S.r_val, S.lag_t, settings.minXCorrProm);
+            rval_ang(r,1) = pr.ang;
+            lag_ang(r,1)  = pl.ang;
         end
-        current_id = animal_id_map(name);
-        
-        % Load background (dark) pulse data if available
-        backgroundFile = fullfile(folder_background, [year_prefix '_' name '_1_xc.mat']);
-        if isfile(backgroundFile)
-            load(backgroundFile, 'r_val', 'lag_t');
-            [peak_lag_background, peak_rval_background, r_val] = find_peak_lag_rval(r_val, lag_t, settings.minXCorrProm);
-            rval_data = [rval_data; peak_rval_background.ang, peak_rval_background.fwd];
-            lag_data = [lag_data; peak_lag_background.ang, peak_lag_background.fwd];
-            animal_ids = [animal_ids; current_id];
-            conditions = [conditions; 1]; % 1 = Dark condition
+
+        if has_b2(r)
+            S = load(fullfile(folder_bg, [yp '_' nm '_2_xc.mat']), 'r_val','lag_t');
+            [pl, pr] = find_peak_lag_rval(S.r_val, S.lag_t, settings.minXCorrProm);
+            rval_ang(r,2) = pr.ang;
+            lag_ang(r,2)  = pl.ang;
         end
-        
-        % Load motion pulse data if available
-        motionFile = fullfile(folder_motion, [name '_xc.mat']);
-        if isfile(motionFile)
-            load(motionFile, 'r_val', 'lag_t');
-            [peak_lag_motion, peak_rval_motion, r_val] = find_peak_lag_rval(r_val, lag_t, settings.minXCorrProm);
-            rval_data = [rval_data; peak_rval_motion.ang, peak_rval_motion.fwd];
-            lag_data = [lag_data; peak_lag_motion.ang, peak_lag_motion.fwd];
-            animal_ids = [animal_ids; current_id];
-            conditions = [conditions; 2]; % 2 = Motion condition
-        end
+
+        S = load(fullfile(folder_motion, [nm '_xc.mat']), 'r_val','lag_t');
+        [pl, pr] = find_peak_lag_rval(S.r_val, S.lag_t, settings.minXCorrProm);
+        rval_ang(r,3) = pr.ang;
+        lag_ang(r,3)  = pl.ang;
     end
 end

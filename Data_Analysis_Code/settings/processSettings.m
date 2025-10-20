@@ -97,15 +97,15 @@ settings.minMtaxCor = 2; %min number of jump corrections to be included in analy
 
 % NOTE: the following parameters are hardcoded in python socket-client code
 % set voltages that were used to denote jump triggers
-settings.voltages_inuse = 1:6;
+settings.voltages_inuse = 1:4;
 
 % set jump sizes corresponding to said jump triggers
-settings.jumps_inuse = [30, -30, 60, -60, 180, -180]; %deg
+settings.jumps_inuse = [90, -90, 180, -180]; %deg
 
 %% general formatting
 settings.trialColor = [0.7 0.7 0.7];
 settings.lwTri = 0.5; %lineweight
-settings.lwAvg = 1.5; %lineweight
+settings.lwAvg = 1.0; %lineweight
 settings.semAlpha = 0.1; %sem opacity
 settings.letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 

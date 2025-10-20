@@ -58,8 +58,8 @@ flylist = [];
 % Initialize data storage arrays
 nFliesThresh = nFlies;  % Initialize counter for flies in behavior analysis
 nt_t = 0;               % Counter for trials
-binFRVm_on = [];        % Binned spike rate data when P1 is on
-binFRVm_off = [];       % Binned spike rate data when P1 is off
+binFRVm_on = []; binFRVm_off = [];
+binProbVm_on = []; binProbVm_off = [];
 storeNames = {};
 
 for nt = 1:nFlies
@@ -70,6 +70,10 @@ for nt = 1:nFlies
     cd(folder.int)
     load(thisTrial)
 
+    % Calculate distribution of firing rates
+    [fr_bins, fr_counts_on(nt,:)] = compute_firingrate_distribution(int_spikert(:,:,1));
+    [fr_bins, fr_counts_off(nt,:)] = compute_firingrate_distribution(int_spikert(:,:,2));
+
     % Threshold for flies with sufficient running time
     flyRunTime(nt,1) = (sum(int_forward > settings.runThreshE, 'all') / length(int_time)) * 60;
 
@@ -79,7 +83,9 @@ for nt = 1:nFlies
     thisVoltage = spikeFilter(int_voltage(:,:,2), int_time);
     sr_binOff = spikert_v_voltage(int_spikert(:,:,2), thisVoltage);
     binFRVm_on(:,nt) = sr_binOn.fr';
+    binProbVm_on(:,nt) = sr_binOn.prob';
     binFRVm_off(:,nt) = sr_binOff.fr';
+    binProbVm_off(:,nt) = sr_binOff.prob';
 
     % Determine average change in activity with/without P1
     [diffSR, diffVm] = analyzeSpikingAndVoltageDifference(int_spikert, int_voltage, int_time, int_forward,settings);
@@ -201,30 +207,6 @@ for nt = 1:nFlies
             lag_pk_sid(nt_t, tt) = peak_lag.sid;
             r_pk_sid(nt_t, tt) = peak_rval.sid;
 
-            % % Run cross-correlation analysis with voltage as input
-            % thisXCorrFile = [thisFly '_' num2str(tt) '_xc_v.mat'];
-            % if exist(thisXCorrFile, 'file')
-            %     disp('Loading previous xcorr.')
-            %     load(thisXCorrFile)
-            % else
-            %     [r_val, lag_t] = spikert_xcorr(thisVoltage, thisForward, thisAngular, thisSideway, int_time);
-            %     save(thisXCorrFile, 'r_val', 'lag_t', '-v7.3');
-            % end
-            %
-            % % Find peaks for voltage cross-correlation using the function with `minXCorrPromVm`
-            % [peak_lag_v, peak_rval_v,r_val] = find_peak_lag_rval(r_val, lag_t, settings.minXCorrPromVm);
-            %
-            % % Store voltage cross-correlation peak results
-            % r_val_fwdv(:, nt_t, tt) = r_val.fwd;
-            % lag_pk_fwdv(nt_t, tt) = peak_lag_v.fwd;
-            % r_pk_fwdv(nt_t, tt) = peak_rval_v.fwd;
-            % r_val_angv(:, nt_t, tt) = r_val.ang;
-            % lag_pk_angv(nt_t, tt) = peak_lag_v.ang;
-            % r_pk_angv(nt_t, tt) = peak_rval_v.ang;
-            % r_val_sidv(:, nt_t, tt) = r_val.sid;
-            % lag_pk_sidv(nt_t, tt) = peak_lag_v.sid;
-            % r_pk_sidv(nt_t, tt) = peak_rval_v.sid;
-
         end
         flylist{nt_t} = thisFly;
     else
@@ -305,7 +287,6 @@ if nt_t>1
     end
 
     % Summary plots of r-values and optimal lags for forward, angular, and sideway velocities
-
     % Forward velocity summary plot
     subplot(3, suby, suby - 1)
     plot(x, r_pk_fwd, '.', 'Color', settings.trialColor); hold on
@@ -420,181 +401,6 @@ if nt_t>1
 
     disp('Cross-correlation analysis complete.')
 end
-
-%% Cross-Correlation Analysis for Voltage vs. Pursuit Behavior
-% disp('Performing cross-correlation for voltage vs pursuit behavior across conditions...')
-% cd(folder.summary)
-%
-% % Calculate mean r-values and lags across flies, ignoring NaNs
-% r_val_fwd_mean = median(r_val_fwdv, 2, 'omitnan');
-% r_val_ang_mean = median(r_val_angv, 2, 'omitnan');
-% r_val_sid_mean = median(r_val_sidv, 2, 'omitnan');
-%
-% lagpeak_fwd_mean = median(lag_pk_fwdv, 1, 'omitnan');
-% lagpeak_ang_mean = median(lag_pk_angv, 1, 'omitnan');
-% lagpeak_sid_mean = median(lag_pk_sidv, 1, 'omitnan');
-%
-% rpeak_fwd_mean = median(r_pk_fwdv, 1, 'omitnan');
-% rpeak_ang_mean = median(r_pk_angv, 1, 'omitnan');
-% rpeak_sid_mean = median(r_pk_sidv, 1, 'omitnan');
-%
-% % Initialize figure settings
-% figure;
-% set(gcf, 'Position', [100, 100, 600, 800])
-% xc_lim = [-400, 400];  % x-axis limit for lag plots
-% x = 1:nTypes;
-% suby = nTypes + 2;  % Number of subplots per row
-% r_range = [-0.5, 1];  % y-axis range for r-values
-%
-% % Plot r-values over time lags for each condition
-% for tt = 1:nTypes
-%     % Forward velocity correlation plot
-%     subplot(3, suby, tt)
-%     plot(lag_t, r_val_fwdv(:,:,tt), '-.', 'LineWidth', settings.lwTri, 'Color', settings.trialColor); hold on
-%     plot(lag_t, r_val_fwd_mean(:, :, tt), 'LineWidth', settings.lwAvg, 'Color', settings.velColor{1})
-%     title(trialTypes{tt})
-%     ylim(r_range)
-%     xline(0);
-%     if tt == 1
-%         ylabel('Forward r-value')
-%     end
-%
-%     % Angular velocity correlation plot
-%     subplot(3, suby, suby + tt)
-%     plot(lag_t, r_val_angv(:,:,tt), '-.', 'LineWidth', settings.lwTri, 'Color', settings.trialColor); hold on
-%     plot(lag_t, r_val_ang_mean(:, :, tt), 'LineWidth', settings.lwAvg, 'Color', settings.velColor{2})
-%     ylim(r_range)
-%     xline(0);
-%     if tt == 1
-%         ylabel('Angular r-value')
-%     end
-%
-%     % Sideway velocity correlation plot
-%     subplot(3, suby, 2 * suby + tt)
-%     plot(lag_t, r_val_sidv(:,:,tt), '-.', 'LineWidth', settings.lwTri, 'Color', settings.trialColor); hold on
-%     plot(lag_t, r_val_sid_mean(:, :, tt), 'LineWidth', settings.lwAvg, 'Color', settings.velColor{3})
-%     ylim(r_range)
-%     xline(0);
-%     if tt == 1
-%         ylabel('Sideway r-value')
-%     end
-%     xlabel('Time (ms)')
-% end
-%
-% % Summary plots for r-values and optimal lags for forward, angular, and sideway velocities
-%
-% % Forward velocity summary (r-values and optimal lags)
-% subplot(3, suby, suby - 1)
-% plot(x, r_pk_fwdv, '.', 'Color', settings.trialColor); hold on
-% plot(x, rpeak_fwd_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{1});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels([]);
-% ylim(r_range);
-% ylabel('Peak r')
-% yline(0);
-%
-% subplot(3, suby, suby)
-% plot(x, lag_pk_fwdv, '.', 'Color', settings.trialColor); hold on
-% plot(x, lagpeak_fwd_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{1});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels([]);
-% ylim(xc_lim);
-% ylabel('Lag (ms)')
-% yline(0);
-%
-% % Label optimal lag points for forward velocity
-% for i = x
-%     text(x(i), 250, num2str(lagpeak_fwd_mean(i)), 'HorizontalAlignment', 'center', ...
-%         'VerticalAlignment', 'bottom', 'FontSize', 8, 'Rotation', 90);
-% end
-%
-% % Angular velocity summary (r-values and optimal lags)
-% subplot(3, suby, 2 * suby - 1)
-% plot(x, r_pk_angv, '.', 'Color', settings.trialColor); hold on
-% plot(x, rpeak_ang_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{2});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels([]);
-% ylim(r_range);
-% ylabel('Peak r')
-% yline(0);
-%
-% subplot(3, suby, 2 * suby)
-% plot(x, lag_pk_angv, '.', 'Color', settings.trialColor); hold on
-% plot(x, lagpeak_ang_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{2});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels([]);
-% ylim(xc_lim);
-% ylabel('Lag (ms)')
-% yline(0);
-%
-% % Label optimal lag points for angular velocity
-% for i = x
-%     text(x(i), 250, num2str(lagpeak_ang_mean(i)), 'HorizontalAlignment', 'center', ...
-%         'VerticalAlignment', 'bottom', 'FontSize', 8, 'Rotation', 90);
-% end
-%
-% % Sideway velocity summary (r-values and optimal lags)
-% subplot(3, suby, 3 * suby - 1)
-% plot(x, r_pk_sidv, '.', 'Color', settings.trialColor); hold on
-% plot(x, rpeak_sid_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{3});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels(trialTypes);
-% ylim(r_range);
-% ylabel('Peak r')
-% yline(0);
-%
-% subplot(3, suby, 3 * suby)
-% plot(x, lag_pk_sidv, '.', 'Color', settings.trialColor); hold on
-% plot(x, lagpeak_sid_mean, 'Marker', '_', 'LineStyle', 'none', 'Color', settings.velColor{3});
-% xlim([0, nTypes + 1]);
-% xticks(x)
-% xticklabels(trialTypes);
-% ylim(xc_lim);
-% ylabel('Lag (ms)')
-% yline(0);
-%
-% % Label optimal lag points for sideway velocity
-% for i = x
-%     text(x(i), 250, num2str(lagpeak_sid_mean(i)), 'HorizontalAlignment', 'center', ...
-%         'VerticalAlignment', 'bottom', 'FontSize', 8, 'Rotation', 90);
-% end
-%
-% % Add figure title and save the plot
-% sgtitle([strrep(filebase, '_', ' ') ' (n = ' num2str(nFliesThresh) ') Xcorr Vm'])
-%
-% % Save plot in summary folder
-% cd(folder.summary)
-% plotname = 'p1background_xcorr_vm';
-% saveas(gcf, [plotname '.png']);
-% copyfile([plotname '.png'], folder.dropbox, 'f');
-%
-% % Save vector version in vector folder
-% cd(folder.vector)
-% set(gcf, 'renderer', 'Painters')
-% saveas(gcf, [plotname '.svg']);
-% copyfile([plotname '.svg'], folder.dropbox, 'f');
-%
-% cd(folder.compare);
-% % Extract the first column of each variable
-% combined_data.r_pk_fwdv = r_pk_fwdv(:, 1);
-% combined_data.r_pk_angv = r_pk_angv(:, 1);
-% combined_data.lag_pk_fwdv = lag_pk_fwdv(:, 1);
-% combined_data.lag_pk_angv = lag_pk_angv(:, 1);
-% combined_data.r_pk_fwdv_nop1 = r_pk_fwdv(:, 2);
-% combined_data.r_pk_angv_nop1 = r_pk_angv(:, 2);
-% combined_data.lag_pk_fwdv_nop1 = lag_pk_fwdv(:, 2);
-% combined_data.lag_pk_angv_nop1 = lag_pk_angv(:, 2);
-% % Define the filename for saving
-% filename = [filebase '_xcorrvm.mat'];
-% % Save each variable in the combined data structure as a single .mat file
-% save(filename, 'combined_data');
-%
-% disp('Cross-correlation analysis complete.')
 
 %% plot spike rate versus directional velocity for w/ w/o P1 activation
 if nt_t>1
@@ -776,215 +582,6 @@ if nt_t>1
 
     disp('Complete.')
 end
-
-% %% plot voltage versus directional velocity for w/ w/o P1 activation
-% disp('Analyzing behavior tuning for P1 on vs off with voltage data...')
-%
-% % Replace missing bins with NaNs
-% vfw_on_nolag(vfw_on_nolag == 0) = nan;
-% vang_on_nolag(vang_on_nolag == 0) = nan;
-% vsid_on_nolag(vsid_on_nolag == 0) = nan;
-% vfw_off_nolag(vfw_off_nolag == 0) = nan;
-% vang_off_nolag(vang_off_nolag == 0) = nan;
-% vsid_off_nolag(vsid_off_nolag == 0) = nan;
-%
-% % Calculate means
-% mean_vfw_on = mean(vfw_on_nolag, 2, 'omitnan');
-% mean_vang_on = mean(vang_on_nolag, 2, 'omitnan');
-% mean_vsid_on = mean(vsid_on_nolag, 2, 'omitnan');
-% mean_vfw_off = mean(vfw_off_nolag, 2, 'omitnan');
-% mean_vang_off = mean(vang_off_nolag, 2, 'omitnan');
-% mean_vsid_off = mean(vsid_off_nolag, 2, 'omitnan');
-%
-% % Calculate SEMs
-% sem_vfw_on = std(vfw_on_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vang_on = std(vang_on_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vsid_on = std(vsid_on_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vfw_off = std(vfw_off_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vang_off = std(vang_off_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vsid_off = std(vsid_off_nolag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-%
-% % Set voltageRange based on min and max of mean_vfw_on
-% voltageRange = [min(mean_vfw_on) - 3, max(mean_vfw_on) + 3];
-%
-% % Initialize figure
-% figure; set(gcf, 'Position', [100 100 1000 400])
-%
-% % Plot forward velocity
-% subplot(1, 3, 1)
-% patch([fwdBins; flipud(fwdBins)], [(mean_vfw_off - sem_vfw_off); flipud(mean_vfw_off + sem_vfw_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([fwdBins; flipud(fwdBins)], [(mean_vfw_on - sem_vfw_on); flipud(mean_vfw_on + sem_vfw_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(fwdBins, mean_vfw_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(fwdBins, mean_vfw_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% ylabel('Voltage (mV)')
-% xlabel(settings.velLabel{1})
-% ylim(voltageRange)
-% xlim([0 fwdRange])
-%
-% % Plot angular velocity
-% subplot(1, 3, 2)
-% patch([angBins; flipud(angBins)], [(mean_vang_off - sem_vang_off); flipud(mean_vang_off + sem_vang_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([angBins; flipud(angBins)], [(mean_vang_on - sem_vang_on); flipud(mean_vang_on + sem_vang_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(angBins, mean_vang_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(angBins, mean_vang_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% xlabel(settings.velLabel{2})
-% ylim(voltageRange)
-% xlim([-angRange angRange])
-% xline(0)
-%
-% % Plot sideways velocity
-% subplot(1, 3, 3)
-% patch([sidBins; flipud(sidBins)], [(mean_vsid_off - sem_vsid_off); flipud(mean_vsid_off + sem_vsid_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([sidBins; flipud(sidBins)], [(mean_vsid_on - sem_vsid_on); flipud(mean_vsid_on + sem_vsid_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(sidBins, mean_vsid_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(sidBins, mean_vsid_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% xlabel(settings.velLabel{3})
-% ylim(voltageRange)
-% xlim([-sidRange sidRange])
-% xline(0)
-%
-% sgtitle([strrep(filebase, '_', ' ') ' Voltage (n = ' num2str(nFliesThresh) ')'])
-% % Save plot
-% cd(folder.summary)
-% plotname = 'p1background_voltage_v_vel';
-% saveas(gcf, [plotname '.png']);
-% copyfile([plotname '.png'], folder.dropbox, 'f');
-% % Save vector plot
-% cd(folder.vector)
-% set(gcf, 'renderer', 'Painters')
-% saveas(gcf, [plotname '.svg'])
-% copyfile([plotname '.svg'], folder.dropbox, 'f');
-%
-% disp('Voltage data plot complete.')
-%
-% %% Plot voltage versus directional velocity for w/ w/o P1 activation with lag
-% disp('Analyzing behavior tuning for P1 on vs off with voltage data and lag...')
-%
-% % Replace missing bins with NaNs
-% vfw_on_lag(vfw_on_lag == 0) = nan;
-% vang_on_lag(vang_on_lag == 0) = nan;
-% vsid_on_lag(vsid_on_lag == 0) = nan;
-% vfw_off_lag(vfw_off_lag == 0) = nan;
-% vang_off_lag(vang_off_lag == 0) = nan;
-% vsid_off_lag(vsid_off_lag == 0) = nan;
-%
-% % Calculate means
-% mean_vfw_on = mean(vfw_on_lag, 2, 'omitnan');
-% mean_vang_on = mean(vang_on_lag, 2, 'omitnan');
-% mean_vsid_on = mean(vsid_on_lag, 2, 'omitnan');
-% mean_vfw_off = mean(vfw_off_lag, 2, 'omitnan');
-% mean_vang_off = mean(vang_off_lag, 2, 'omitnan');
-% mean_vsid_off = mean(vsid_off_lag, 2, 'omitnan');
-%
-% % Calculate SEMs
-% sem_vfw_on = std(vfw_on_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vang_on = std(vang_on_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vsid_on = std(vsid_on_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vfw_off = std(vfw_off_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vang_off = std(vang_off_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-% sem_vsid_off = std(vsid_off_lag, 0, 2, 'omitnan') / sqrt(nFliesThresh);
-%
-% % Initialize figure
-% figure; set(gcf, 'Position', [100 100 1000 400])
-%
-% % Plot forward velocity with lag
-% subplot(1, 3, 1)
-% patch([fwdBins; flipud(fwdBins)], [(mean_vfw_off - sem_vfw_off); flipud(mean_vfw_off + sem_vfw_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([fwdBins; flipud(fwdBins)], [(mean_vfw_on - sem_vfw_on); flipud(mean_vfw_on + sem_vfw_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(fwdBins, mean_vfw_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(fwdBins, mean_vfw_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% ylabel('Voltage (mV)')
-% xlabel(settings.velLabel{1})
-% ylim(voltageRange)
-% xlim([0 fwdRange])
-%
-% % Plot angular velocity with lag
-% subplot(1, 3, 2)
-% patch([angBins; flipud(angBins)], [(mean_vang_off - sem_vang_off); flipud(mean_vang_off + sem_vang_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([angBins; flipud(angBins)], [(mean_vang_on - sem_vang_on); flipud(mean_vang_on + sem_vang_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(angBins, mean_vang_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(angBins, mean_vang_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% xlabel(settings.velLabel{2})
-% ylim(voltageRange)
-% xlim([-angRange angRange])
-% xline(0)
-%
-% % Plot sideways velocity with lag
-% subplot(1, 3, 3)
-% patch([sidBins; flipud(sidBins)], [(mean_vsid_off - sem_vsid_off); flipud(mean_vsid_off + sem_vsid_off)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{1});
-% hold on
-% patch([sidBins; flipud(sidBins)], [(mean_vsid_on - sem_vsid_on); flipud(mean_vsid_on + sem_vsid_on)], 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none', 'FaceColor', settings.bckColor{2});
-% plot(sidBins, mean_vsid_off, 'Color', settings.bckColor{1}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% plot(sidBins, mean_vsid_on, 'Color', settings.bckColor{2}, 'MarkerFaceColor', 'w', 'LineWidth', settings.lwAvg)
-% xlabel(settings.velLabel{3})
-% ylim(voltageRange)
-% xlim([-sidRange sidRange])
-% xline(0)
-%
-% sgtitle([strrep(filebase, '_', ' ') ' Voltage w/lag (n = ' num2str(nFliesThresh) ')'])
-% % Save plot
-% cd(folder.summary)
-% plotname = 'p1background_voltage_v_vel_lag';
-% saveas(gcf, [plotname '.png']);
-% copyfile([plotname '.png'], folder.dropbox, 'f');
-% % Save vector plot
-% cd(folder.vector)
-% set(gcf, 'renderer', 'Painters')
-% saveas(gcf, [plotname '.svg'])
-% copyfile([plotname '.svg'], folder.dropbox, 'f');
-%
-% disp('Voltage data with lag plot complete.')
-
-% %% analyze voltage v firing rate
-% disp('Analyzing voltage v firing rate...')
-%
-% % initialize
-% figure; set(gcf,'Position',[100 100 800 375])
-% tiledlayout(1,2)
-%
-% % calculate means
-% meanSRBin_on = mean(binFRVm_on,2,'omitnan');
-% meanSRBin_off = mean(binFRVm_off,2,'omitnan');
-%
-% % find a "representative" cell
-% % opt 2: order according to midpoint (mean)
-% % column_means = mean(binFRVm_on,'omitnan');
-% % median_mean = prctile(column_means,90);
-% % [~, repIdx] = min(abs(column_means - median_mean));
-% % meanSRBin_on = binFRVm_on(:,repIdx);
-% % column_means = mean(binFRVm_off,'omitnan');
-% % median_mean = prctile(column_means,80);
-% % [~, repIdx] = min(abs(column_means - median_mean));
-% % meanSRBin_off = binFRVm_on(:,repIdx);
-%
-% % plot
-% nexttile; hold on
-% plot(vmBins,binFRVm_on,'Color',settings.trialColor,'LineWidth',settings.lwTri)
-% plot(vmBins,meanSRBin_on,'Color',settings.bckColor{2},'LineWidth',settings.lwAvg)
-% axis padded; xlabel('Voltage (mV)'); ylabel('Firing Rate (spikes/s)'); title('P1+'); yline(0)
-% nexttile; hold on
-% plot(vmBins,binFRVm_off,'Color',settings.trialColor,'LineWidth',settings.lwTri)
-% plot(vmBins,meanSRBin_off,'Color','k','LineWidth',settings.lwAvg)
-% axis padded; xlabel('Voltage (mV)'); ylabel('Firing Rate (spikes/s)'); title('P1-'); yline(0)
-%
-% sgtitle(strrep(filebase,'_','/'))
-% % save plot
-% cd(folder.summary)
-% plotname = 'voltage_v_fr';
-% saveas(gcf,[plotname '.png']);
-% copyfile([plotname '.png'], folder.dropbox,'f');
-% % save vectorized plot
-% cd(folder.vector)
-% set(gcf,'renderer','Painters')
-% saveas(gcf, [plotname '.svg'])
-% copyfile([plotname '.svg'], folder.dropbox,'f');
-%
-% disp('Complete.')
 
 %% Plot slopes for directional velocity data
 if nt_t>1
@@ -1264,6 +861,196 @@ if nt_t>1
 
 end
 
+%% Plot relationship between change in membrane voltage and firing rate
+figure('Color','w');
+set(gcf, 'Position', [100, 100, 850, 800]);
+tl = tiledlayout(2,2,'TileSpacing','compact','Padding','compact');
+
+% ---------- (1) TOP-LEFT: Measured FR vs Vm (OFF black, ON red) ----------
+nexttile; hold on;
+
+% OFF (black)
+for nt = 1:size(binFRVm_off,2)
+    plot(vmBins, binFRVm_off(:,nt), 'k', 'LineWidth', 0.5);
+end
+
+% ON (red)
+for nt = 1:size(binFRVm_on,2)
+    plot(vmBins, binFRVm_on(:,nt), 'r', 'LineWidth', 0.5);
+end
+
+% Limits
+allY = [binFRVm_off(:); binFRVm_on(:)];
+ymin = min(allY(~isnan(allY))); if isempty(ymin), ymin = 0; end
+ymax = max(allY(~isnan(allY))); if isempty(ymax), ymax = 1; end
+xlim([min(vmBins) max(vmBins)]);
+ylim([ymin ymax]);
+grid on;
+xlabel('Membrane voltage (mV)');
+ylabel('Firing rate (Hz)');
+title('Measured FR vs Vm');
+
+% ---------- (2) TOP-RIGHT: ΔFR vs ΔVm (zero-shifted per fly) ----------
+nexttile; hold on;
+
+nFlies = max(size(binFRVm_off,2), size(binFRVm_on,2));
+xmins = []; xmaxs = []; ymins = []; ymaxs = [];
+
+for nt = 1:nFlies
+    % Handle unequal columns safely
+    y_off = nan(size(vmBins)); if nt <= size(binFRVm_off,2), y_off = binFRVm_off(:,nt); end
+    y_on  = nan(size(vmBins)); if nt <= size(binFRVm_on,2),  y_on  = binFRVm_on(:,nt);  end
+
+    validBins = ~isnan(y_off) | ~isnan(y_on);
+    if ~any(validBins), continue; end
+
+    minVm_nt = min(vmBins(validBins));
+    minFR_nt = min([y_off(validBins); y_on(validBins)], [], 'omitnan');
+
+    x_shift = vmBins - minVm_nt;
+    y_off_shift = y_off - minFR_nt;
+    y_on_shift  = y_on  - minFR_nt;
+
+    plot(x_shift, y_off_shift, 'k', 'LineWidth', 0.5);
+    plot(x_shift, y_on_shift,  'r', 'LineWidth', 0.5);
+
+    xmins(end+1,1) = min(x_shift(validBins));
+    xmaxs(end+1,1) = max(x_shift(validBins));
+    ymins(end+1,1) = min([y_off_shift(validBins); y_on_shift(validBins)], [], 'omitnan');
+    ymaxs(end+1,1) = max([y_off_shift(validBins); y_on_shift(validBins)], [], 'omitnan');
+end
+
+if ~isempty(xmins), xlim([min(xmins) max(xmaxs)]); else, xlim([0 1]); end
+if ~isempty(ymins), ylim([min(ymins) max(ymaxs)]); else, ylim([0 1]); end
+
+grid on;
+xlabel('\Delta Membrane voltage (mV)');
+ylabel('\Delta Firing rate (Hz)');
+title('\DeltaFR vs \DeltaVm');
+
+% ---------- (3) BOTTOM-LEFT: Vm distribution (probability) ----------
+nexttile; hold on;
+
+% OFF (black probabilities)
+for nt = 1:size(binProbVm_off,2)
+    plot(vmBins, binProbVm_off(:,nt), 'k', 'LineWidth', 0.5);
+end
+
+% ON (red probabilities)
+for nt = 1:size(binProbVm_on,2)
+    plot(vmBins, binProbVm_on(:,nt), 'r', 'LineWidth', 0.5);
+end
+
+% Limits for probabilities
+allP = [binProbVm_off(:); binProbVm_on(:)];
+pmax = max(allP(~isnan(allP))); if isempty(pmax), pmax = 1; end
+xlim([min(vmBins) max(vmBins)]);
+ylim([0 pmax]);
+grid on;
+xlabel('Membrane voltage (mV)');
+ylabel('Probability');
+title('Vm distribution (prob.)');
+
+% ---------- (4) BOTTOM-RIGHT: \DeltaVm distribution (probability) ----------
+nexttile; hold on;
+
+xmins = []; xmaxs = [];  % reuse for shifted x-lims
+
+nFliesP = max(size(binProbVm_off,2), size(binProbVm_on,2));
+for nt = 1:nFliesP
+    p_off = nan(size(vmBins)); if nt <= size(binProbVm_off,2), p_off = binProbVm_off(:,nt); end
+    p_on  = nan(size(vmBins)); if nt <= size(binProbVm_on,2),  p_on  = binProbVm_on(:,nt);  end
+
+    % Use same validBins definition as FR (bins with any data)
+    validBins = (~isnan(p_off) & p_off>0) | (~isnan(p_on) & p_on>0);
+    % If probability arrays may have zeros but FR had data, optionally fall back:
+    if ~any(validBins)
+        % fallback to any non-NaN (keeps alignment with vmBins if sparsity exists)
+        validBins = ~isnan(p_off) | ~isnan(p_on);
+    end
+    if ~any(validBins), continue; end
+
+    % min Vm per fly across bins with any probability mass (or fallback)
+    minVm_nt = min(vmBins(validBins));
+    x_shift = vmBins - minVm_nt;
+
+    % Plot shifted probabilities (y stays as prob; x is shifted)
+    plot(x_shift, p_off, 'k', 'LineWidth', 0.5);
+    plot(x_shift, p_on,  'r', 'LineWidth', 0.5);
+
+    xmins(end+1,1) = min(x_shift(validBins));
+    xmaxs(end+1,1) = max(x_shift(validBins));
+end
+
+if ~isempty(xmins), xlim([min(xmins) max(xmaxs)]); else, xlim([0 1]); end
+ylim([0 pmax]); % re-use global prob max for consistent scaling
+grid on;
+xlabel('\Delta Membrane voltage (mV)');
+ylabel('Probability');
+title('\DeltaVm distribution (prob.)');
+
+% Overall title
+title(tl, 'FR–Vm and Vm distributions (OFF=black, ON=red)', 'FontWeight','bold');
+
+% save plot
+cd(folder.summary)
+plotname = 'pulse_nonlinear';
+saveas(gcf,[plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox,'f');
+
+% save vectorized plot
+cd(folder.vector)
+set(gcf, 'renderer', 'Painters')
+saveas(gcf, [plotname '.svg'])
+copyfile([plotname '.svg'], folder.dropbox,'f');
+
+%% Plot firing rate distribution
+% Bin centers for plotting
+binCenters = fr_bins(1:end-1) + diff(fr_bins)/2;   % 0:20:200 -> centers at 10:20:190
+
+% Mean and SEM across animals
+meanCounts_on = mean(fr_counts_on, 1, 'omitnan');
+semCounts_on  = std(fr_counts_on, 0, 1, 'omitnan') ./ sqrt(nFlies);
+meanCounts_off = mean(fr_counts_off, 1, 'omitnan');
+semCounts_off  = std(fr_counts_off, 0, 1, 'omitnan') ./ sqrt(nFlies);
+
+% Figure and layout
+figure; set(gcf, 'Position', [100 100 500 800]); hold on;
+
+% SEM patch
+x_patch = [binCenters, fliplr(binCenters)];
+y_patch = [meanCounts_on - semCounts_on, fliplr(meanCounts_on + semCounts_on)];
+sp = patch(x_patch(:), y_patch(:), 'r', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+sp.FaceColor = 'r';  % match line color
+% Mean line
+plot(binCenters, meanCounts_on, 'LineWidth', 2, 'Color', 'r');
+
+% SEM patch
+x_patch = [binCenters, fliplr(binCenters)];
+y_patch = [meanCounts_off - semCounts_off, fliplr(meanCounts_off + semCounts_off)];
+sp2 = patch(x_patch(:), y_patch(:), 'k', 'FaceAlpha', settings.semAlpha, 'EdgeColor', 'none');
+sp2.FaceColor = 'k';  % match line color
+% Mean line
+plot(binCenters, meanCounts_off, 'LineWidth', 2, 'Color', 'k');
+
+% Axes/labels
+xlim([fr_bins(1) fr_bins(end)]);
+ylim([0, 0.5]);
+xlabel('Firing rate (Hz)');
+ylabel('Probability');
+title('Firing rate distribution (mean \pm SEM across animals)');
+box off; set(gca, 'Layer', 'top');
+
+% save plot
+cd(folder.summary)
+plotname = 'fr_distribution';
+saveas(gcf,[plotname '.png']);
+copyfile([plotname '.png'], folder.dropbox,'f');
+% save vectorized plot
+cd(folder.vector)
+set(gcf,'renderer','Painters')
+saveas(gcf, [plotname '.svg'])
+copyfile([plotname '.svg'], folder.dropbox,'f');
 
 %% end
 disp('ALL ANALYSES COMPLETE.')
