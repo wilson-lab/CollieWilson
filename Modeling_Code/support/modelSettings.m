@@ -24,9 +24,9 @@ runSettings.visObjPosition = linspace(-180, 180, 361);
 
 % Simulation parameters
 runSettings.numRuns = 20000; % Number of times to run the simulation (ideal > 20k)
-runSettings.k = 5;           % Max change in head direction per time step
+runSettings.k = 0.45+0.2;           % Max change in head direction per time step
 runSettings.fs = 100;        % Simulation update rate, in Hz
-runSettings.fpass = 1;       % Lowpass cutoff for random component, in Hz
+runSettings.fpass = 0.05;       % Lowpass cutoff for random component, in Hz
 
 % Neuron settings
 runSettings.visuomotor_delay = 200; %ms

@@ -33,7 +33,7 @@ function modelPerformance(predicted_RF, comparisonType)
 close all;
 
 % Define the range to test
-kValues = [0.8];  % Steering gain (k) values to iterate over
+kValues = runSettings.k;  % Steering gain (k) values to iterate over
 nK = length(kValues);  % Number of k values
 stability_noiseLevel = 0.7;
 step_noiseLevel = 0.1;
@@ -53,8 +53,8 @@ if strcmp(comparisonType, 'dirselective')
     nComp = 3;
 elseif strcmp(comparisonType, 'silence')
     % compare normal, 019 silenced, 025 silenced, 019/025 silenced, minor silenced
-    comparisonLabel = {'full', 'AOTU019 0', 'AOTU025 0', 'Major 0', 'Minor 0'};
-    nComp = 5;
+    comparisonLabel = {'full', 'AOTU019 0'};
+    nComp = 2;
 end
 
 % Run model
@@ -185,7 +185,7 @@ saveas(gcf, fullfile(folder.vectors, [comparisonType '_ExampleRuns' '.svg']));
 
 %% Generate summary plots
 % Generate and save summary metrics plot
-generateSummaryMetrics(kValues, metrics_prob, metrics_var, metrics_ISE, metrics_IAE, comparisonLabel, comparisonType, folder);
+generateSummaryMetrics(kValues, metrics_prob, comparisonLabel, comparisonType, 'Gain', folder);
 
 % Generate and save summary plot of Angular Velocity vs Object Position (EVT)
 generateSummaryEVT(nK, kValues, evt_avg, posBins, comparisonLabel, comparisonType, folder);

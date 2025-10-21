@@ -27,7 +27,7 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, comparis
 
     % Generate summary plot for Angular Velocity vs Object Position
     figure;
-    set(gcf, 'Position', [100 100 1500 500]);  % Set figure size
+    set(gcf, 'Position', [100 100 300*nK 500]);  % Set figure size
     tiledlayout(1, nK, 'TileSpacing', 'compact');  % One row for each k value
 
     % Loop over k values for plotting
@@ -48,7 +48,7 @@ function generateSummaryEVT(nK, kValues, evt, posBins, comparisonLabel, comparis
         end
         grid on;
         ylim([-150 150]);
-        xlim([-80 80]);
+        xlim([-60 60]);
     end
 
     % Add overall title

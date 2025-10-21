@@ -18,8 +18,8 @@ function plotModelSettings(predicted_RF, runSettings)
 
     % Colors for each RF component
     otherColor = "#77AC30";
-    AOTU019Color = "#7E2F8E";
-    AOTU025Color = "#0072BD";
+    AOTU025Color = "#7E2F8E";
+    AOTU019Color = "#0072BD";
 
     % Plot RF lookup tables and their flipped versions in the first tile
     nexttile;
@@ -43,7 +43,7 @@ function plotModelSettings(predicted_RF, runSettings)
     ylabel('RF Response');
     title('RF Lookup Tables');
     xlim([-180 180]);
-    ylim([0 1.65]);
+    ylim([0 2]);
     legend('show', 'Location', 'northwest');
     grid on;
     hold off;

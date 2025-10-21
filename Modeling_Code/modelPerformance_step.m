@@ -1,213 +1,190 @@
-% modelPerformance_step
-%
-% This function runs a step input test to evaluate the settling performance
-% of a fly steering model across a range of initial stimulus positions.
-% It compares model behavior under different experimental conditions
-% (e.g., synapse type, strength, or direction selectivity), computes
-% settling times for each condition, and generates example response plots
-% at selected start positions.
-%
-% INPUTS:
-%   predicted_RF      - Struct containing the predicted receptive fields for model neurons.
-%   comparisonType    - Comparison mode: 'synapse', 'strength', or 'dirselective'.
-%
-% CREATED: 04/06/2025 - MC
-
 function modelPerformance_step(predicted_RF, comparisonType)
-%% Initialize
+% MODELPERFORMANCE_STEP
+% CREATED: 10/20/2025 - MC
+%
+% Runs a step input test across initial positions to assess settling performance
+% under different comparison modes ('synapse', 'strength', 'dirselective').
+% Computes settling times, plots representative responses, and generates summaries.
 
+%% INITIALIZE PARAMETERS AND SETTINGS
 [folder, plotSettings, runSettings] = modelSettings();
 close all;
 
-% Define the range of step start positions to test
-startPosValues = 0:10:130;
-nStart = length(startPosValues);
-kVal = 0.8; % fixed steering gain
-step_noiseLevel = 0.1;
-step_simDuration = 11;
-startTime = 100;
-settling_tolerance = 2; % degrees from 0
-conditionColors = {"#0072BD"; "#D95319";"#7E2F8E"};
-
-% Variables depending on comparison type
-if strcmp(comparisonType, 'synapse')
-    comparisonLabel = {'Inhibitory', 'Excitatory'};
-    nComp = 2;
-    thisSynapse = {"inhibitory"; "excitatory"};
-    strengthValues = 1;
-elseif strcmp(comparisonType, 'strength')
-    comparisonLabel = {'Strength 1', 'Strength 0'};
-    nComp = 2;
-    thisSynapse = "inhibitory";
-    strengthValues = [1, 0];
-elseif strcmp(comparisonType, 'dirselective')
-    comparisonLabel = {'neither', '019 DS','025 DS'};
-    nComp = 3;
-    thisSynapse = "inhibitory";
-    strengthValues = 1;
+% Comparison setup
+switch lower(comparisonType)
+    case 'synapse'
+        compLabels = {'Inhibitory','Excitatory'};
+        nComp      = 2;
+        synapseOpt = {"inhibitory"; "excitatory"};
+        strengthOpt = 1;
+    case 'strength'
+        compLabels  = {'Strength 1','Strength 0'};
+        nComp       = 2;
+        synapseOpt  = "inhibitory";
+        strengthOpt = [1, 0];
+    case 'dirselective'
+        compLabels  = {'neither','019 DS','025 DS'};
+        nComp       = 3;
+        synapseOpt  = "inhibitory";
+        strengthOpt = 1;
+    otherwise
+        compLabels  = {'Cond A','Cond B'};
+        nComp       = 2;
+        synapseOpt  = "inhibitory";
+        strengthOpt = 1;
 end
 
-% Preallocate settling time array
+% Fixed model parameters
+kVal          = runSettings.k;
+noiseLevel    = 0.01;
+simDuration   = 16;
+startIndex    = 100;     % index in timebase at which step occurs
+settleTolDeg  = 2;       % degrees from 0 for settling
+condColors    = {"#0072BD"; "#D95319"; "#7E2F8E"};
+
+% Sweep over initial step positions
+startPosValues = 0:10:140;
+nStart         = numel(startPosValues);
+
+% Storage
 avgSettlingTime = zeros(nStart, nComp);
 
-% Select subset of start positions to plot
-maxPlotS = min(6, nStart);
-selected_start_indices = round(linspace(1, nStart, maxPlotS));
+% Representative plotting choices
+maxShow   = min(6, nStart);
+showIdx   = round(linspace(1, nStart, maxShow));
 
-% Initialize figure for example plots
 figure; set(gcf, 'Position', [100 100 1500 900]);
-tiledlayout(maxPlotS, nComp, 'TileSpacing', 'compact');
+tiledlayout(maxShow, nComp, 'TileSpacing', 'compact');
 
-% Loop over start positions
+% RUN STEP SIMULATIONS ACROSS START POSITIONS
 for sIdx = 1:nStart
     thisStartPos = startPosValues(sIdx);
     runSettings.nStart = sIdx;
-    disp(['Running step test for startPos = ', num2str(thisStartPos)]);
 
-    for idx = 1:nComp
-        if strcmp(comparisonType, 'synapse')
-            thisType = thisSynapse{idx};
-            thisStrength = strengthValues;
-        elseif strcmp(comparisonType, 'strength')
-            thisStrength = strengthValues(idx);
-            thisType = thisSynapse;
-        elseif strcmp(comparisonType, 'dirselective')
-            thisStrength = strengthValues;
-            thisType = thisSynapse;
-            runSettings.dirselective = idx - 1;
+    for cIdx = 1:nComp
+        % --- Configure synapse type and strength for this condition ---
+        if iscell(synapseOpt)
+            thisSynapse  = synapseOpt{cIdx};
+        else
+            thisSynapse  = synapseOpt;
+        end
+        if numel(strengthOpt) > 1
+            thisStrength = strengthOpt(cIdx);
+        else
+            thisStrength = strengthOpt;
+        end
+        if strcmpi(comparisonType, 'dirselective')
+            runSettings.dirselective = cIdx - 1; % 0,1,2
         end
 
-        % Adjust tuning
+        % --- Adjust tuning for condition ---
         thisTuning = predicted_RF;
         thisTuning.AOTU019 = thisTuning.AOTU019 .* thisStrength;
 
-        % Run step simulation
-        [step_timebase, step_visobj_history, ~, ~] = aotu_steering_model(...
-            thisTuning, step_noiseLevel, thisStartPos, thisType, ...
-            step_simDuration, kVal, startTime, runSettings);
+        % --- Run step simulation ---
+        [t, vispos, ~, ~] = aotu_steering_model( ...
+            thisTuning, noiseLevel, thisStartPos, thisSynapse, ...
+            simDuration, kVal, startIndex, runSettings);
 
-        % Compute settling time
-        avgSettlingTime(sIdx, idx) = calculateAverageSettlingTime(...
-            step_timebase, step_visobj_history, settling_tolerance, 1) ...
-            - step_timebase(startTime);
+        % --- Settling time (relative to step onset time) ---
+        tSettle = calculateAverageSettlingTime(t, vispos, settleTolDeg, 1);
+        avgSettlingTime(sIdx, cIdx) = tSettle - t(startIndex);
 
-        % Example plots
-        if any(sIdx == selected_start_indices)
-            step_visobj_plot = remove_large_jumps(step_visobj_history(1, :), 180);
+        % --- Plot representative responses ---
+        if any(sIdx == showIdx)
+            trialPlot = remove_large_jumps(vispos(1,:), 180);
             nexttile
-            plot(step_timebase, step_visobj_plot, 'Color', conditionColors{idx});
-            xlabel('Time (s)');
-            ylabel('Position (deg)');
-            title(['Start Pos = ' num2str(thisStartPos)]);
-            yline(0);
-            xline(step_timebase(startTime));
-            axis tight;
-            ylim([-180 180]);
-
-            if sIdx == 1
-                legend(comparisonLabel{idx});
-            end
+            plot(t, trialPlot, 'Color', condColors{cIdx});
+            xlabel('Time (s)'); ylabel('Position (deg)');
+            title(sprintf('Start Pos = %d°', thisStartPos));
+            yline(0); xline(t(startIndex));
+            axis tight; ylim([-180 180]);
+            if sIdx == showIdx(1), legend(compLabels{cIdx}); end
         end
     end
 end
 
-% Save the figure of example runs
+% SAVE FIGURE AND SUMMARY (START POSITION SWEEP)
 sgtitle(['Example Step Responses: ' comparisonType]);
-saveas(gcf, fullfile(folder.final, [comparisonType '_StepExampleRuns.png']));
-set(gcf, 'renderer', 'Painters');
-saveas(gcf, fullfile(folder.vectors, [comparisonType '_StepExampleRuns.svg']));
+set(gcf, 'Renderer', 'painters');
+saveas(gcf, fullfile(folder.final,  [comparisonType '_StepExampleRuns.png']));
+saveas(gcf, fullfile(folder.vectors,[comparisonType '_StepExampleRuns.svg']));
 
-% Generate summary plot
-generateSettlingSummary(startPosValues, avgSettlingTime, comparisonLabel, comparisonType, folder);
+generateSettlingSummary(startPosValues, avgSettlingTime, compLabels, comparisonType, folder);
 
-%% Run AGAIN with different DSI values
-
-[folder, plotSettings, runSettings] = modelSettings();
+%% RUN DSI SWEEP (PENALTY → DSI) AT FIXED START POSITION
+[folder, plotSettings, runSettings] = modelSettings(); %#ok<ASGLU>  % refresh settings for clean state
 close all;
 
-% Define range of penalty levels to test
 penaltyValues = 0:0.1:1;
-dsiValues = (1 - penaltyValues) ./ (1 + penaltyValues); % convert to DSI
-nPV = length(penaltyValues);
+dsiValues     = (1 - penaltyValues) ./ (1 + penaltyValues);
+nDSI          = numel(penaltyValues);
 
-thisStartPos = 100;
-kVal = 0.8; % fixed steering gain
-step_noiseLevel = 0.1;
-step_simDuration = 11;
-startTime = 100;
-settling_tolerance = 2; % degrees from 0
-conditionColors = {"#0072BD"; "#D95319";"#7E2F8E"};
+fixedStartPos = 120;     % degrees
+thisNoise     = noiseLevel;
 
-% Variables depending on comparison type
-strcmp(comparisonType, 'dirselective')
-nComp = 3;
-thisSynapse = "inhibitory";
+% Reuse comparison labeling/size from above
+avgSettlingTime = zeros(nDSI, nComp);
 
-% Preallocate settling time array
-avgSettlingTime = zeros(nPV, nComp);
+maxShow2 = min(6, nDSI);
+showIdx2 = round(linspace(1, nDSI, maxShow2));
 
-% Select subset of start positions to plot
-maxPlotS = min(6, nPV);
-selected_start_indices = round(linspace(1, nPV, maxPlotS));
-
-% Initialize figure for example plots
 figure; set(gcf, 'Position', [100 100 1500 900]);
-tiledlayout(maxPlotS, nComp, 'TileSpacing', 'compact');
+tiledlayout(maxShow2, nComp, 'TileSpacing', 'compact');
 
-% Loop over start positions
-for sIdx = 1:nPV
-    thisPenalty = penaltyValues(sIdx);
-    thisDSI = dsiValues(sIdx);
-    runSettings.AOTU019dsi_penalty = thisPenalty;
-    disp(['Running simulations for dsi = ', num2str(thisDSI)]);
+for dIdx = 1:nDSI
+    runSettings.AOTU019dsi_penalty = penaltyValues(dIdx);
+    thisDSI = dsiValues(dIdx);
 
-    for idx = 1:nComp
-        % load fresh copy of RF
-        thisTuning = predicted_RF;
-        % select condition dependent features
-        if strcmp(comparisonType, 'strength')
-            switch idx
-                case 2
-                    thisTuning.AOTU019 = thisTuning.AOTU019 .* 0;
-            end
-        elseif strcmp(comparisonType, 'dirselective')
-            % set no (0), 019 DS (1), or 025 DS (2) call
-            runSettings.dirselective = idx - 1;    
+    for cIdx = 1:nComp
+        % --- Configure synapse/strength and DS mode per condition ---
+        if iscell(synapseOpt)
+            thisSynapse  = synapseOpt{cIdx};
+        else
+            thisSynapse  = synapseOpt;
+        end
+        if numel(strengthOpt) > 1
+            thisStrength = strengthOpt(cIdx);
+        else
+            thisStrength = strengthOpt;
+        end
+        if strcmpi(comparisonType, 'dirselective')
+            runSettings.dirselective = cIdx - 1; % 0,1,2
         end
 
-        % Run step simulation
-        [step_timebase, step_visobj_history, ~, ~] = aotu_steering_model(thisTuning, step_noiseLevel, thisStartPos, thisSynapse, step_simDuration, kVal, startTime, runSettings);
+        % --- Adjust tuning for condition ---
+        thisTuning = predicted_RF;
+        thisTuning.AOTU019 = thisTuning.AOTU019 .* thisStrength;
 
-        % Compute settling time
-        avgSettlingTime(sIdx, idx) = calculateAverageSettlingTime(step_timebase, step_visobj_history, settling_tolerance, 1) - step_timebase(startTime);
+        % --- Run step simulation at fixed start position ---
+        [t, vispos, ~, ~] = aotu_steering_model( ...
+            thisTuning, thisNoise, fixedStartPos, thisSynapse, ...
+            simDuration, kVal, startIndex, runSettings);
 
-        % Example plots
-        if any(sIdx == selected_start_indices)
-            step_visobj_plot = remove_large_jumps(step_visobj_history(1, :), 180);
+        % --- Settling time relative to step onset ---
+        tSettle = calculateAverageSettlingTime(t, vispos, settleTolDeg, 1);
+        avgSettlingTime(dIdx, cIdx) = tSettle - t(startIndex);
+
+        % --- Plot representative responses ---
+        if any(dIdx == showIdx2)
+            trialPlot = remove_large_jumps(vispos(1,:), 180);
             nexttile
-            plot(step_timebase, step_visobj_plot, 'Color', conditionColors{idx});
-            xlabel('Time (s)');
-            ylabel('Position (deg)');
-            title(['DSI = ' num2str(thisDSI)]);
-            yline(0);
-            xline(step_timebase(startTime));
-            axis tight;
-            ylim([-180 180]);
-
-            if sIdx == 1
-                legend(comparisonLabel{idx});
-            end
+            plot(t, trialPlot, 'Color', condColors{cIdx});
+            xlabel('Time (s)'); ylabel('Position (deg)');
+            title(sprintf('DSI = %.2f', thisDSI));
+            yline(0); xline(t(startIndex));
+            axis tight; ylim([-180 180]);
+            if dIdx == showIdx2(1), legend(compLabels{cIdx}); end
         end
     end
 end
 
-% Save the figure of example runs
-sgtitle(['Example Step Responses: ' comparisonType]);
-saveas(gcf, fullfile(folder.final, [comparisonType '_dsiStepExampleRuns.png']));
-set(gcf, 'renderer', 'Painters');
-saveas(gcf, fullfile(folder.vectors, [comparisonType '_dsiStepExampleRuns.svg']));
+% SAVE FIGURE AND SUMMARY (DSI SWEEP)
+sgtitle(['Example Step Responses: ' comparisonType ' (DSI sweep)']);
+set(gcf, 'Renderer', 'painters');
+saveas(gcf, fullfile(folder.final,  [comparisonType '_dsiStepExampleRuns.png']));
+saveas(gcf, fullfile(folder.vectors,[comparisonType '_dsiStepExampleRuns.svg']));
 
-% Generate summary plot
-comparisonType2 = [comparisonType '2'];
-generateSettlingSummary(dsiValues, avgSettlingTime, comparisonLabel, comparisonType2, folder);
+comparisonType2 = [comparisonType '_dsi'];
+generateSettlingSummary(dsiValues, avgSettlingTime, compLabels, comparisonType2, folder);
 end

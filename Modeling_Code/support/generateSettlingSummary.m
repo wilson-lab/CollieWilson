@@ -42,7 +42,7 @@ function generateSettlingSummary(k, avgSettlingTime, comparisonLabel, comparison
     ylabel('Settling Time (s)');
     legend('Location', 'best');
     axis padded
-    ylim([0 10]);  % Adjust as needed
+    ylim([0 15]);  % Adjust as needed
     grid on;
 
     % Overall title for the figure

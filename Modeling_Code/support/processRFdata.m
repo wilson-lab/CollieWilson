@@ -15,19 +15,19 @@
 %
 function predicted_RF = processRFdata(Pursuit_RFs)
     % Fetch all neuron cell types from the dataset
+    Pursuit_RFs(:,1) = [];
     celltypes = Pursuit_RFs.Properties.VariableNames;
 
     % Filter out AOTU019 and AOTU025 (specific neurons of interest)
-    idxOther = ~ismember(celltypes, {'AOTU019','AOTU025'});
-    rfOther = Pursuit_RFs(:, idxOther); % RF data for all other neuron types
+    minor_idx = ~ismember(celltypes, {'AOTU019','AOTU025'});
+    minor_RFs = Pursuit_RFs(:, minor_idx); % RF data for all other neuron types
 
-    % CB2070 neuron projects contralaterally, flip its RF data to match visual input alignment
-    idxCB2070 = ismember(rfOther.Properties.VariableNames, {'CB20701','CB20702'});
-    rfOther(:, idxCB2070) = flip(rfOther(:, idxCB2070), 1); % Flip RF data for contralateral neurons
-    rfOther(:, idxCB2070) = []; % omit
+    % some neurons projects contralaterally, flip its RF data to match visual input alignment
+    minor_contra_idx = ismember(minor_RFs.Properties.VariableNames, {'AOTU002_a','AOTU002_c'});
+    minor_RFs(:, minor_contra_idx) = flip(minor_RFs(:, minor_contra_idx), 1); % Flip RF data for contralateral neurons
 
     % Sum RF data across all neurons except AOTU019 and AOTU025
-    rfOther = sum(rfOther, 2);
+    minor_RFs = sum(minor_RFs, 2);
 
     % (Optional) Apply a light Gaussian smoothing to the summed RF data
     % gwin = 15; % Smoothing window size
@@ -36,5 +36,5 @@ function predicted_RF = processRFdata(Pursuit_RFs)
     % Create the final predicted_RF table that includes:
     % 1. The summed RF of all other neurons (excluding AOTU019, AOTU025)
     % 2. The individual RFs of AOTU019 and AOTU025
-    predicted_RF = [rfOther Pursuit_RFs(:, ismember(celltypes, {'AOTU019', 'AOTU025'}))];
+    predicted_RF = [minor_RFs Pursuit_RFs(:, ismember(celltypes, {'AOTU019', 'AOTU025'}))];
 end

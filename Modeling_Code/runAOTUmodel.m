@@ -6,6 +6,7 @@
 %
 % Created: 10/05/2024 - MC
 % Updated: 11/01/2024 - MC
+%          10/20/2025 - MC updated to male model
 %
 %% Initialize workspace and variables
 % Clear all variables and close any open figures to ensure a clean workspace
@@ -20,19 +21,11 @@ cd(folder.filePath)
 
 % Load the receptive field (RF) data from the 'Pursuit_RFs.mat' file, which contains information about
 % the RFs of AOTU neurons for visual pursuit behavior.
-load("Pursuit_RFs.mat");
+Pursuit_RFs = readtable("Pursuit_RFs.csv");
 
 % Process the raw RF data using the 'processRFdata' function to generate predicted receptive fields (predicted_RF).
 % These predicted RFs will be used in subsequent model performance comparisons.
 predicted_RF = processRFdata(Pursuit_RFs);
-
-% Plot RFs and ELU for reference
-plotModelSettings(predicted_RF, runSettings)
-% Save the plot
-saveas(gcf, fullfile(folder.settings, ['Model_Settings' '.png']));
-set(gcf,'renderer','Painters')
-saveas(gcf, fullfile(folder.vectors, ['Model_Settings' '.svg']));
-
 
 %% Run silencing comparison model
 close all
@@ -44,6 +37,15 @@ close all
 restricted_RF = predicted_RF;
 restricted_RF{:,1} = zeros(height(restricted_RF), 1);
 
-modelPerformance_trajectory(restricted_RF, 'dirselective');
+%modelPerformance_trajectory(restricted_RF, 'dirselective');
 modelPerformance_step(restricted_RF, 'dirselective')
+close all
+
+%% Optional: plot RFs
+% Plot RFs and ELU for reference
+plotModelSettings(predicted_RF, runSettings)
+% Save the plot
+saveas(gcf, fullfile(folder.settings, ['Model_Settings' '.png']));
+set(gcf,'renderer','Painters')
+saveas(gcf, fullfile(folder.vectors, ['Model_Settings' '.svg']));
 
