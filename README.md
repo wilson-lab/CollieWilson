@@ -1,10 +1,11 @@
-# Specialized Parallel Pathways for Adaptive Control of Visual Object Pursuit
+# Code associated with Specialized Parallel Pathways for Adaptive Control of Visual Object Pursuit
 
 This repository accompanies the manuscript:
 
 **Collie, M.F., Jin, C., Kellogg, E., Vanderbeck, Q.X., Hartman, A.K., Holtz, S.L., & Wilson, R.I.**  
-*Specialized parallel pathways for adaptive control of visual object pursuit*  
-[bioRxiv, 2025.](https://doi.org/10.1101/2025.04.23.650240)
+*Specialized parallel pathways for adaptive control of visual object pursuit* Neuron, 2026. DOI: https://doi.org/10.1016/j.neuron.2026.01.001
+
+Which should be cited if this code or dataset are used.
 
 ---
 
@@ -58,14 +59,6 @@ Data analysis pipelines for:
 - Python 3.9+ for treadmill and display arena interfacing
 - [FicTrac](https://github.com/rjdmoore/fictrac) for spherical treadmill tracking
 - [Display_Tools](https://reiserlab.github.io/Modular-LED-Display/G4/) for modular LED display arena ("G4")
-
----
-
-## Citation
-
-If you use this code or data, please cite:
-
-> Collie et al. (2025). *Specialized parallel pathways for adaptive control of visual object pursuit*. bioRxiv. https://doi.org/10.1101/2025.04.23.650240
 
 ---
 
